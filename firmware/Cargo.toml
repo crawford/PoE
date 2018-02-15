@@ -7,5 +7,10 @@ authors = ["Alex Crawford <alex@acrawford.com>"]
 cortex-m = "*"
 efm32gg11b820 = { version = "^0.2.0", features = [ "rt" ] }
 
+[profile.dev]
+incremental = false
+opt-level = 3
+lto = true
+
 [profile.release]
 lto = true
