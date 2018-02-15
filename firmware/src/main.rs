@@ -19,15 +19,15 @@ extern crate cortex_m;
 #[macro_use]
 extern crate efm32gg11b820;
 
-use cortex_m::interrupt;
+use cortex_m::{asm, interrupt};
 
 fn main() {
-    let peripherals = unsafe { efm32gg11b820::Peripherals::steal() };
+    let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
     let gpio = peripherals.GPIO;
     let msc = peripherals.MSC;
     let timer = peripherals.TIMER0;
-    let mut nvic = unsafe { efm32gg11b820::CorePeripherals::steal().NVIC };
+    let mut nvic = efm32gg11b820::CorePeripherals::take().unwrap().NVIC;
 
     // Enable the HFXO
     cmu.oscencmd.write(|reg| reg.hfxoen().set_bit());
@@ -104,7 +104,7 @@ fn main() {
     timer.cmd.write(|reg| reg.start().set_bit());
 
     loop {
-        cortex_m::asm::wfe();
+        asm::wfe();
     }
 }
 
@@ -123,7 +123,37 @@ fn isr_timer0() {
 
 interrupt!(TIMER0, isr_timer0);
 
+// Light up both LEDs yellow, trigger a breakpoint, and loop
 #[lang = "panic_fmt"]
-fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
-    interrupt::free(|_| loop {})
+#[no_mangle]
+pub fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
+    interrupt::disable();
+
+    unsafe {
+        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
+            write
+                .dout()
+                .bits((read.dout().bits() & !(0x3F << 10)) | (0x24 << 10))
+        })
+    };
+
+    asm::bkpt();
+    loop {}
+}
+
+// Light up both LEDs red, trigger a breakpoint, and loop
+default_handler!(ex_default);
+fn ex_default() {
+    interrupt::disable();
+
+    unsafe {
+        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
+            write
+                .dout()
+                .bits((read.dout().bits() & !(0x3F << 10)) | (0x36 << 10))
+        })
+    };
+
+    asm::bkpt();
+    loop {}
 }
