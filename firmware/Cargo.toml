@@ -10,6 +10,11 @@ version = "*"
 version = "*"
 features = [ "rt" ]
 
+[dependencies.smoltcp]
+git = "https://github.com/m-labs/smoltcp"
+default-features = false
+features = [ "proto-ipv4", "socket-tcp" ]
+
 [profile.dev]
 incremental = false
 opt-level = 3

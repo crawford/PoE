@@ -18,12 +18,15 @@
 extern crate cortex_m;
 #[macro_use]
 extern crate efm32gg11b820;
+extern crate smoltcp;
 
 mod efm32gg;
 
 use cortex_m::{asm, interrupt};
 
 static mut MAC: Option<efm32gg::MAC> = None;
+static mut RX_BUFFER: [u8; 2048] = [0; 2048];
+static mut TX_BUFFER: [u8; 2048] = [0; 2048];
 
 fn main() {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
@@ -66,12 +69,21 @@ fn main() {
         reg
     });
 
-    let mac = efm32gg::MAC::new();
-    mac.configure(&eth, &cmu, &gpio, &mut nvic);
-    unsafe { MAC = Some(mac) }
+    let mac = efm32gg::MAC::new(
+        efm32gg::Buffer::new(unsafe { &mut RX_BUFFER }),
+        efm32gg::Buffer::new(unsafe { &mut TX_BUFFER }),
+    );
+
+    unsafe {
+        MAC = Some(mac);
+        MAC.as_mut()
+            .unwrap()
+            .configure(&eth, &cmu, &gpio, &mut nvic);
+    }
 
     loop {
         asm::wfe();
+        unsafe { MAC.as_mut().unwrap().process() }
     }
 }
 
