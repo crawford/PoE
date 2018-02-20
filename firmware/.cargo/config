@@ -6,5 +6,6 @@ runner = "./flash.sh"
 rustflags = [
 	"--codegen", "link-arg=-Tlink.x",
 	"--codegen", "linker=arm-none-eabi-ld",
+	"--codegen", "lto=fat",
 	"-Z", "linker-flavor=ld",
 ]
