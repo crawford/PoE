@@ -3,9 +3,12 @@ name = "poe"
 version = "0.1.0-dev"
 authors = ["Alex Crawford <alex@acrawford.com>"]
 
-[dependencies]
-cortex-m = "*"
-efm32gg11b820 = { version = "^0.2.0", features = [ "rt" ] }
+[dependencies.cortex-m]
+version = "*"
+
+[dependencies.efm32gg11b820]
+version = "^0.2.0"
+features = [ "rt" ]
 
 [profile.dev]
 incremental = false
