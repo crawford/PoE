@@ -6,6 +6,9 @@ authors = ["Alex Crawford <alex@acrawford.com>"]
 [dependencies.cortex-m]
 version = "*"
 
+[dependencies.cortex-m-semihosting]
+version = "*"
+
 [dependencies.efm32gg11b820]
 version = "*"
 features = [ "rt" ]
