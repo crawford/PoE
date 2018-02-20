@@ -16,6 +16,7 @@
 #![no_std]
 
 extern crate cortex_m;
+extern crate cortex_m_semihosting;
 #[macro_use]
 extern crate efm32gg11b820;
 extern crate smoltcp;

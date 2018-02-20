@@ -13,8 +13,9 @@
 // limitations under the License.
 
 use core::cell::UnsafeCell;
-use core::fmt;
-use cortex_m::interrupt;
+use core::fmt::{self, Write};
+use cortex_m::{asm, interrupt};
+use cortex_m_semihosting::hio;
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
 use smoltcp::{self, phy, time};
 
@@ -200,6 +201,56 @@ impl<'a> MAC<'a> {
 
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
+
+        // XXX: Wait for the PHY
+        for _ in 0..1000 {
+            asm::nop();
+        }
+
+        let oui = (self.miim_read(eth, 0x00, 0x02) as u32) << 6
+            | (self.miim_read(eth, 0x00, 0x03) as u32) >> 10;
+
+        writeln!(
+            hio::hstdout().unwrap(),
+            "OUI: {:02X}:{:02X}:{:02X}",
+            (oui >> 16) as u8,
+            (oui >> 8) as u8,
+            oui as u8,
+        ).unwrap();
+    }
+
+    fn miim_read(&self, eth: &ETH, address: u8, register: u8) -> u16 {
+        eth.phymngmnt.write(|reg| {
+            unsafe { reg.phyaddr().bits(address) };
+            unsafe { reg.phyrwdata().bits(0x00) };
+            unsafe { reg.regaddr().bits(register) };
+            unsafe { reg.operation().bits(0b10) };
+
+            unsafe { reg.write10().bits(0b10) };
+            reg.write1().set_bit();
+            reg.write0().clear_bit();
+            reg
+        });
+
+        while eth.networkstatus.read().mandone().bit_is_clear() {}
+
+        eth.phymngmnt.read().phyrwdata().bits()
+    }
+
+    fn miim_write(&self, eth: &ETH, address: u8, register: u8, data: u16) {
+        eth.phymngmnt.write(|reg| {
+            unsafe { reg.phyaddr().bits(address) };
+            unsafe { reg.phyrwdata().bits(data) };
+            unsafe { reg.regaddr().bits(register) };
+            unsafe { reg.operation().bits(0b01) };
+
+            unsafe { reg.write10().bits(0b10) };
+            reg.write1().set_bit();
+            reg.write0().clear_bit();
+            reg
+        });
+
+        while eth.networkstatus.read().mandone().bit_is_clear() {}
     }
 
     pub fn process(&mut self) {
