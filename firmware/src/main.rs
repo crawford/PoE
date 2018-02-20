@@ -12,18 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(lang_items)]
+#![feature(attr_literals, lang_items)]
 #![no_std]
 
 extern crate cortex_m;
 #[macro_use]
 extern crate efm32gg11b820;
 
+mod efm32gg;
+
 use cortex_m::{asm, interrupt};
+
+static mut MAC: Option<efm32gg::MAC> = None;
 
 fn main() {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
+    let eth = peripherals.ETH;
     let gpio = peripherals.GPIO;
     let msc = peripherals.MSC;
     let mut nvic = efm32gg11b820::CorePeripherals::take().unwrap().NVIC;
@@ -61,9 +66,18 @@ fn main() {
         reg
     });
 
+    let mac = efm32gg::MAC::new();
+    mac.configure(&eth, &cmu, &gpio, &mut nvic);
+    unsafe { MAC = Some(mac) }
+
     loop {
         asm::wfe();
     }
+}
+
+interrupt!(ETH, isr_eth);
+fn isr_eth() {
+    unsafe { MAC.as_mut() }.unwrap().isr()
 }
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
