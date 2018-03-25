@@ -7,7 +7,7 @@ authors = ["Alex Crawford <alex@acrawford.com>"]
 version = "*"
 
 [dependencies.efm32gg11b820]
-version = "^0.2.0"
+version = "*"
 features = [ "rt" ]
 
 [profile.dev]
