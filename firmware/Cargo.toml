@@ -8,6 +8,7 @@ version = "*"
 
 [dependencies.cortex-m-semihosting]
 version = "*"
+optional = true
 
 [dependencies.efm32gg11b820]
 version = "*"
@@ -16,7 +17,10 @@ features = [ "rt" ]
 [dependencies.smoltcp]
 git = "https://github.com/m-labs/smoltcp"
 default-features = false
-features = [ "proto-ipv4", "socket-tcp" ]
+features = [ "proto-ipv4", "socket-udp", "socket-tcp"  ]
+
+[dependencies.log]
+version = "*"
 
 [profile.dev]
 incremental = false
@@ -25,3 +29,7 @@ lto = true
 
 [profile.release]
 lto = true
+
+[features]
+#default = [ "logging" ]
+logging = [ "cortex-m-semihosting", "smoltcp/log" ]
