@@ -16,18 +16,29 @@
 #![no_std]
 
 extern crate cortex_m;
+#[cfg(feature = "logging")]
 extern crate cortex_m_semihosting;
 #[macro_use]
 extern crate efm32gg11b820;
+#[macro_use]
+extern crate log;
 extern crate smoltcp;
 
 mod efm32gg;
+#[cfg(feature = "logging")]
+mod semihosting;
 
+use core::fmt::Write;
 use cortex_m::{asm, interrupt};
+use efm32gg::dma;
+use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
+use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer, UdpSocket, UdpSocketBuffer};
+use smoltcp::storage::PacketMetadata;
+use smoltcp::time::Instant;
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
-static mut MAC: Option<efm32gg::MAC> = None;
-static mut RX_BUFFER: [u8; 2048] = [0; 2048];
-static mut TX_BUFFER: [u8; 2048] = [0; 2048];
+#[cfg(feature = "logging")]
+static LOGGER: semihosting::Logger = semihosting::Logger;
 
 fn main() {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
@@ -70,28 +81,88 @@ fn main() {
         reg
     });
 
-    let mac = efm32gg::MAC::new(
-        efm32gg::Buffer::new(unsafe { &mut RX_BUFFER }),
-        efm32gg::Buffer::new(unsafe { &mut TX_BUFFER }),
+    #[cfg(feature = "logging")]
+    {
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level(log::LevelFilter::Trace);
+    }
+
+    let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
+    let mut neighbor_cache = [None; 8];
+    let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 1, 0, 3), 24)];
+
+    let mut rx_buffer = dma::RxRegion([0; 1536]);
+    let mut tx_buffer = dma::TxRegion([0; 1536]);
+    let mut mac = efm32gg::MAC::new(
+        efm32gg::RxBuffer::new(&mut rx_buffer),
+        efm32gg::TxBuffer::new(&mut tx_buffer),
+    );
+    mac.configure(&eth, &cmu, &gpio, &mut nvic);
+
+    let mut iface = EthernetInterfaceBuilder::new(&mut mac)
+        .ethernet_addr(ethernet_addr)
+        .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
+        .ip_addrs(ip_addrs.as_mut())
+        .finalize();
+
+    let mut udp_rx_payload = [0; 128];
+    let mut udp_rx_metadata = [PacketMetadata::EMPTY; 1];
+    let mut udp_tx_payload = [0; 128];
+    let mut udp_tx_metadata = [PacketMetadata::EMPTY; 1];
+    let udp_socket = UdpSocket::new(
+        UdpSocketBuffer::new(udp_rx_metadata.as_mut(), udp_rx_payload.as_mut()),
+        UdpSocketBuffer::new(udp_tx_metadata.as_mut(), udp_tx_payload.as_mut()),
     );
 
-    unsafe {
-        MAC = Some(mac);
-        MAC.as_mut()
-            .unwrap()
-            .configure(&eth, &cmu, &gpio, &mut nvic);
-    }
+    let mut tcp_rx_payload = [0; 128];
+    let mut tcp_tx_payload = [0; 128];
+    let tcp_socket = TcpSocket::new(
+        TcpSocketBuffer::new(tcp_rx_payload.as_mut()),
+        TcpSocketBuffer::new(tcp_tx_payload.as_mut()),
+    );
+
+    let mut sockets = [None, None];
+    let mut socket_set = SocketSet::new(sockets.as_mut());
+    //let udp_handle = socket_set.add(udp_socket);
+    let tcp_handle = socket_set.add(tcp_socket);
 
     loop {
         asm::wfe();
-        unsafe { MAC.as_mut().unwrap().process() }
+
+        let timestamp = Instant::from_millis(0);
+        match iface.poll(&mut socket_set, timestamp) {
+            Ok(_) => {}
+            Err(err) => error!("Failed to poll: {}", err),
+        }
+
+        //{
+        //    let mut socket = socket_set.get::<UdpSocket>(udp_handle);
+        //    if !socket.is_open() {
+        //        socket.bind(6969).unwrap()
+        //    }
+
+        //    if let Ok((data, endpoint)) = socket.recv() {
+        //        debug!("udp:6969 recv data: '{}' from {}", core::str::from_utf8(data).unwrap_or("(invalid utf8)"), endpoint);
+        //    }
+        //}
+
+        {
+            let mut socket = socket_set.get::<TcpSocket>(tcp_handle);
+            if !socket.is_open() {
+                socket.listen(6969).unwrap();
+            }
+
+            if socket.can_send() {
+                debug!("tcp:6969 send greeting");
+                write!(socket, "hello\n").unwrap();
+                debug!("tcp:6969 close");
+                socket.close();
+            }
+        }
     }
 }
 
-interrupt!(ETH, isr_eth);
-fn isr_eth() {
-    unsafe { MAC.as_mut() }.unwrap().isr()
-}
+interrupt!(ETH, efm32gg::isr);
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
 #[lang = "panic_fmt"]
