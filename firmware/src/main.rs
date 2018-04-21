@@ -29,7 +29,7 @@ mod efm32gg;
 mod semihosting;
 
 use core::fmt::Write;
-use cortex_m::{asm, interrupt};
+use cortex_m::{asm, interrupt, peripheral};
 use efm32gg::dma;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
 use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer, UdpSocket, UdpSocketBuffer};
@@ -178,7 +178,9 @@ pub fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
         })
     };
 
-    asm::bkpt();
+    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+        asm::bkpt();
+    }
     loop {}
 }
 
@@ -195,6 +197,8 @@ fn ex_default() {
         })
     };
 
-    asm::bkpt();
+    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+        asm::bkpt();
+    }
     loop {}
 }
