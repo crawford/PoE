@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(attr_literals, lang_items)]
+#![feature(lang_items)]
+#![no_main]
 #![no_std]
 
 extern crate cortex_m;
+#[macro_use]
+extern crate cortex_m_rt;
 #[cfg(feature = "logging")]
 extern crate cortex_m_semihosting;
 #[macro_use]
@@ -40,7 +43,8 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 #[cfg(feature = "logging")]
 static LOGGER: semihosting::Logger = semihosting::Logger;
 
-fn main() {
+entry!(main);
+fn main() -> ! {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
     let eth = peripherals.ETH;
@@ -185,8 +189,26 @@ pub fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
 }
 
 // Light up both LEDs red, trigger a breakpoint, and loop
-default_handler!(ex_default);
-fn ex_default() {
+exception!(*, default_handler);
+fn default_handler(_irqn: i16) {
+    interrupt::disable();
+
+    unsafe {
+        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
+            write
+                .dout()
+                .bits((read.dout().bits() & !(0x3F << 10)) | (0x36 << 10))
+        })
+    };
+
+    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+        asm::bkpt();
+    }
+    loop {}
+}
+
+exception!(HardFault, hardfault_handler);
+fn hardfault_handler(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     interrupt::disable();
 
     unsafe {
