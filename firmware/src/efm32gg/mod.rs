@@ -327,8 +327,8 @@ impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
         caps.max_transmission_unit = 1536;
         caps.checksum.icmpv4 = phy::Checksum::Both;
         caps.checksum.ipv4 = phy::Checksum::Both;
-        caps.checksum.tcpv4 = phy::Checksum::Both;
-        caps.checksum.udpv4 = phy::Checksum::Both;
+        caps.checksum.tcp = phy::Checksum::Both;
+        caps.checksum.udp = phy::Checksum::Both;
         caps
     }
 
