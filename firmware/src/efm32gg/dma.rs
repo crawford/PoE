@@ -129,7 +129,8 @@ impl BufferDescriptor for RxBufferDescriptor {
 
     fn release(&mut self) {
         self.address = UnsafeCell::new(
-            self.address() | RxBufferDescriptor::wrapping_to_word(self.wrapping())
+            self.address()
+                | RxBufferDescriptor::wrapping_to_word(self.wrapping())
                 | RxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Hardware),
         )
     }
@@ -268,11 +269,8 @@ impl TxBufferDescriptor {
 
     pub fn set_last_buffer(&mut self, last: bool) {
         self.status = UnsafeCell::new(
-            (unsafe { *self.status.get() } & !0x0000_8000) | if last {
-                0x0000_8000
-            } else {
-                0x0000_0000
-            },
+            (unsafe { *self.status.get() } & !0x0000_8000)
+                | if last { 0x0000_8000 } else { 0x0000_0000 },
         );
     }
 

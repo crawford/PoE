@@ -345,7 +345,8 @@ impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
                     if d.start_of_frame() && d.ownership() == BufferDescriptorOwnership::Software {
                         start = Some(i);
                     }
-                    if d.end_of_frame() && d.ownership() == BufferDescriptorOwnership::Software
+                    if d.end_of_frame()
+                        && d.ownership() == BufferDescriptorOwnership::Software
                         && start.is_some()
                     {
                         end = Some(i);
