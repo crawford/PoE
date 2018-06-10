@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(lang_items)]
+#![feature(panic_implementation)]
 #![no_main]
 #![no_std]
 
@@ -32,6 +32,7 @@ mod efm32gg;
 mod semihosting;
 
 use core::fmt::Write;
+use core::panic::PanicInfo;
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg::dma;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
@@ -169,9 +170,9 @@ fn main() -> ! {
 interrupt!(ETH, efm32gg::isr);
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
-#[lang = "panic_fmt"]
+#[panic_implementation]
 #[no_mangle]
-pub fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
+pub fn panic(_info: &PanicInfo) -> ! {
     interrupt::disable();
 
     unsafe {
