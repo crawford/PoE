@@ -12,21 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(lang_items)]
+#![feature(panic_implementation)]
+#![no_main]
 #![no_std]
 
 extern crate cortex_m;
 #[macro_use]
+extern crate cortex_m_rt;
+#[cfg(feature = "logging")]
+extern crate cortex_m_semihosting;
+#[macro_use]
 extern crate efm32gg11b820;
+#[macro_use]
+extern crate log;
+extern crate smoltcp;
 
-use cortex_m::{asm, interrupt};
+mod efm32gg;
+#[cfg(feature = "logging")]
+mod semihosting;
 
-fn main() {
+use core::fmt::Write;
+use core::panic::PanicInfo;
+use cortex_m::{asm, interrupt, peripheral};
+use efm32gg::dma;
+use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
+use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer, UdpSocket, UdpSocketBuffer};
+use smoltcp::storage::PacketMetadata;
+use smoltcp::time::Instant;
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+
+#[cfg(feature = "logging")]
+static LOGGER: semihosting::Logger = semihosting::Logger;
+
+entry!(main);
+fn main() -> ! {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
+    let eth = peripherals.ETH;
     let gpio = peripherals.GPIO;
     let msc = peripherals.MSC;
-    let timer = peripherals.TIMER0;
     let mut nvic = efm32gg11b820::CorePeripherals::take().unwrap().NVIC;
 
     // Enable the HFXO
@@ -50,9 +74,8 @@ fn main() {
     let _ = cmu.status.read().bits();
 
     cmu.hfbusclken0.write(|reg| reg.gpio().set_bit());
-    cmu.hfperclken0.write(|reg| reg.timer0().set_bit());
-
-    gpio.ph_dout.reset();
+    gpio.ph_dout
+        .write(|reg| unsafe { reg.dout().bits(0x3F << 10) });
     gpio.ph_modeh.write(|reg| {
         reg.mode10().wiredand();
         reg.mode11().wiredand();
@@ -63,70 +86,93 @@ fn main() {
         reg
     });
 
-    timer.cmd.write(|reg| reg.stop().set_bit());
-    timer.cnt.reset();
-    timer.ctrl.write(|reg| {
-        reg.presc().div1024();
-        reg.clksel().preschfperclk();
-        reg.falla().none();
-        reg.risea().none();
-        reg.mode().up();
-        reg.debugrun().clear_bit();
-        reg.dmaclract().clear_bit();
-        reg.qdm().clear_bit();
-        reg.osmen().clear_bit();
-        reg.x2cnt().clear_bit();
-        reg.ati().clear_bit();
-        reg
-    });
-    timer
-        .top
-        .write(|reg| unsafe { reg.top().bits(50_000_000 / (1024 * 10)) });
-    timer.ifc.write(|reg| {
-        reg.of().set_bit();
-        reg.uf().set_bit();
-        reg.dirchg().set_bit();
-        reg.cc0().set_bit();
-        reg.cc1().set_bit();
-        reg.cc2().set_bit();
-        reg.cc3().set_bit();
-        reg.icbof0().set_bit();
-        reg.icbof1().set_bit();
-        reg.icbof2().set_bit();
-        reg.icbof3().set_bit();
-        reg
-    });
-    timer.ien.write(|reg| reg.of().set_bit());
+    #[cfg(feature = "logging")]
+    {
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level(log::LevelFilter::Trace);
+    }
 
-    nvic.clear_pending(efm32gg11b820::Interrupt::TIMER0);
-    nvic.enable(efm32gg11b820::Interrupt::TIMER0);
+    let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
+    let mut neighbor_cache = [None; 8];
+    let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 1, 0, 3), 24)];
 
-    timer.cmd.write(|reg| reg.start().set_bit());
+    let mut rx_buffer = dma::RxRegion([0; 1536]);
+    let mut tx_buffer = dma::TxRegion([0; 1536]);
+    let mut mac = efm32gg::MAC::new(
+        efm32gg::RxBuffer::new(&mut rx_buffer),
+        efm32gg::TxBuffer::new(&mut tx_buffer),
+    );
+    mac.configure(&eth, &cmu, &gpio, &mut nvic);
+
+    let mut iface = EthernetInterfaceBuilder::new(&mut mac)
+        .ethernet_addr(ethernet_addr)
+        .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
+        .ip_addrs(ip_addrs.as_mut())
+        .finalize();
+
+    let mut udp_rx_payload = [0; 128];
+    let mut udp_rx_metadata = [PacketMetadata::EMPTY; 1];
+    let mut udp_tx_payload = [0; 128];
+    let mut udp_tx_metadata = [PacketMetadata::EMPTY; 1];
+    let udp_socket = UdpSocket::new(
+        UdpSocketBuffer::new(udp_rx_metadata.as_mut(), udp_rx_payload.as_mut()),
+        UdpSocketBuffer::new(udp_tx_metadata.as_mut(), udp_tx_payload.as_mut()),
+    );
+
+    let mut tcp_rx_payload = [0; 128];
+    let mut tcp_tx_payload = [0; 128];
+    let tcp_socket = TcpSocket::new(
+        TcpSocketBuffer::new(tcp_rx_payload.as_mut()),
+        TcpSocketBuffer::new(tcp_tx_payload.as_mut()),
+    );
+
+    let mut sockets = [None, None];
+    let mut socket_set = SocketSet::new(sockets.as_mut());
+    //let udp_handle = socket_set.add(udp_socket);
+    let tcp_handle = socket_set.add(tcp_socket);
 
     loop {
         asm::wfe();
+
+        let timestamp = Instant::from_millis(0);
+        match iface.poll(&mut socket_set, timestamp) {
+            Ok(_) => {}
+            Err(err) => error!("Failed to poll: {}", err),
+        }
+
+        //{
+        //    let mut socket = socket_set.get::<UdpSocket>(udp_handle);
+        //    if !socket.is_open() {
+        //        socket.bind(6969).unwrap()
+        //    }
+
+        //    if let Ok((data, endpoint)) = socket.recv() {
+        //        debug!("udp:6969 recv data: '{}' from {}", core::str::from_utf8(data).unwrap_or("(invalid utf8)"), endpoint);
+        //    }
+        //}
+
+        {
+            let mut socket = socket_set.get::<TcpSocket>(tcp_handle);
+            if !socket.is_open() {
+                socket.listen(6969).unwrap();
+            }
+
+            if socket.can_send() {
+                debug!("tcp:6969 send greeting");
+                write!(socket, "hello\n").unwrap();
+                debug!("tcp:6969 close");
+                socket.close();
+            }
+        }
     }
 }
 
-fn isr_timer0() {
-    interrupt::free(|_| unsafe {
-        (*efm32gg11b820::TIMER0::ptr())
-            .ifc
-            .write(|reg| reg.of().set_bit());
-        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
-            write
-                .dout()
-                .bits((((read.dout().bits() >> 10) + 0x0B) & 0x3F) << 10)
-        });
-    })
-}
-
-interrupt!(TIMER0, isr_timer0);
+interrupt!(ETH, efm32gg::isr);
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
-#[lang = "panic_fmt"]
+#[panic_implementation]
 #[no_mangle]
-pub fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
+pub fn panic(_info: &PanicInfo) -> ! {
     interrupt::disable();
 
     unsafe {
@@ -137,13 +183,15 @@ pub fn rust_begin_panic(_msg: core::fmt::Arguments, _file: &'static str) -> ! {
         })
     };
 
-    asm::bkpt();
+    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+        asm::bkpt();
+    }
     loop {}
 }
 
 // Light up both LEDs red, trigger a breakpoint, and loop
-default_handler!(ex_default);
-fn ex_default() {
+exception!(*, default_handler);
+fn default_handler(_irqn: i16) {
     interrupt::disable();
 
     unsafe {
@@ -154,6 +202,26 @@ fn ex_default() {
         })
     };
 
-    asm::bkpt();
+    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+        asm::bkpt();
+    }
+    loop {}
+}
+
+exception!(HardFault, hardfault_handler);
+fn hardfault_handler(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
+    interrupt::disable();
+
+    unsafe {
+        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
+            write
+                .dout()
+                .bits((read.dout().bits() & !(0x3F << 10)) | (0x36 << 10))
+        })
+    };
+
+    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+        asm::bkpt();
+    }
     loop {}
 }

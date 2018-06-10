@@ -3,9 +3,28 @@ name = "poe"
 version = "0.1.0-dev"
 authors = ["Alex Crawford <alex@acrawford.com>"]
 
-[dependencies]
-cortex-m = "*"
-efm32gg11b820 = { version = "^0.2.0", features = [ "rt" ] }
+[dependencies.cortex-m]
+version = "*"
+
+[dependencies.cortex-m-rt]
+version = "*"
+features = [ "device" ]
+
+[dependencies.cortex-m-semihosting]
+version = "*"
+optional = true
+
+[dependencies.efm32gg11b820]
+version = "*"
+features = [ "rt" ]
+
+[dependencies.smoltcp]
+git = "https://github.com/m-labs/smoltcp"
+default-features = false
+features = [ "proto-ipv4", "socket-udp", "socket-tcp"  ]
+
+[dependencies.log]
+version = "*"
 
 [profile.dev]
 incremental = false
@@ -14,3 +33,7 @@ lto = true
 
 [profile.release]
 lto = true
+
+[features]
+#default = [ "logging" ]
+logging = [ "cortex-m-semihosting", "smoltcp/log" ]

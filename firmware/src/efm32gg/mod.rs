@@ -1,0 +1,497 @@
+// Copyright 2018 Alex Crawford
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+pub mod dma;
+
+pub use dma::RxBuffer;
+pub use dma::TxBuffer;
+
+use core::{mem, slice};
+use cortex_m::{asm, interrupt};
+use dma::{BufferDescriptor, BufferDescriptorOwnership, RxBufferDescriptor, TxBufferDescriptor};
+use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
+use smoltcp::{self, phy, time, Error};
+
+pub struct MAC<'a> {
+    rx_buffer: RxBuffer<'a>,
+    tx_buffer: TxBuffer<'a>,
+}
+
+impl<'a> MAC<'a> {
+    // TODO: This should probably accept a PHY so that this doesn't need to understand how to
+    // configure the PHY.
+    pub fn new(rx_buffer: RxBuffer<'a>, tx_buffer: TxBuffer<'a>) -> MAC<'a> {
+        MAC {
+            rx_buffer,
+            tx_buffer,
+        }
+    }
+
+    /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
+    /// clock.
+    pub fn configure(&mut self, eth: &ETH, cmu: &CMU, gpio: &GPIO, nvic: &mut NVIC) {
+        // Enable the HFPER clock and source CLKOUT2 from HFXO
+        cmu.ctrl.modify(|_, reg| {
+            reg.hfperclken().set_bit();
+            reg.clkoutsel2().hfxo();
+            reg
+        });
+
+        // Enable the clock to the ethernet controller
+        cmu.hfbusclken0.modify(|_, reg| reg.eth().set_bit());
+
+        // Scale the MDC down to 1.5625MHz (below the 2.5MHz limit)
+        // Enable 1536-byte frames, which are needed to support 802.11Q VLAN tagging
+        eth.networkcfg.write(|reg| {
+            reg.mdcclkdiv().divby32();
+            reg.rx1536byteframes().set_bit();
+            reg.rxchksumoffloaden().set_bit();
+            reg.speed().set_bit();
+            reg
+        });
+
+        // TODO: Use BITSET/BITCLEAR instead
+        // Hold the PHY module in reset
+        gpio.ph_model.modify(|_, reg| reg.mode7().pushpull());
+        gpio.ph_dout
+            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() & !(1 << 7)) });
+
+        // Power up the PHY module
+        gpio.pi_modeh.modify(|_, reg| reg.mode10().pushpull());
+        gpio.pi_dout
+            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 10)) });
+
+        // Configure the RMII GPIOs
+        gpio.pf_model.write(|reg| {
+            reg.mode6().pushpull(); // TXD1
+            reg.mode7().pushpull(); // TXD0
+            reg
+        });
+        gpio.pf_modeh.write(|reg| {
+            reg.mode8().pushpull(); // TX_EN
+            reg.mode9().input(); // RXD1
+            reg
+        });
+        gpio.pd_modeh.write(|reg| {
+            reg.mode9().input(); // RXD0
+            reg.mode10().pushpull(); // REFCLK
+            reg.mode11().input(); // CRS_DV
+            reg.mode12().input(); // RX_ER
+            reg.mode13().pushpull(); // MDIO
+            reg.mode14().pushpull(); // MDC
+            reg
+        });
+
+        // Enable the PHY's reference clock
+        cmu.routeloc0.modify(|_, reg| reg.clkout2loc().loc5());
+        cmu.routepen.modify(|_, reg| reg.clkout2pen().set_bit());
+
+        // Enable the RMII and MDIO
+        eth.routeloc1.write(|reg| {
+            reg.rmiiloc().loc1();
+            reg.mdioloc().loc1();
+            reg
+        });
+        eth.routepen.write(|reg| {
+            reg.rmiipen().set_bit();
+            reg.mdiopen().set_bit();
+            reg
+        });
+
+        // Set the RX buffer size to 128 bytes
+        eth.dmacfg.write(|reg| {
+            unsafe { reg.rxbufsize().bits(128 / 64) };
+            unsafe { reg.ambabrstlen().bits(0x01) };
+            reg.txpbuftcpen().set_bit();
+            reg.txpbufsize().set_bit();
+            reg.rxpbufsize().size3();
+            reg
+        });
+
+        // Set the RX buffer descriptor queue address
+        eth.rxqptr
+            .write(|reg| unsafe { reg.dmarxqptr().bits(self.rx_buffer.address() as u32 >> 2) });
+
+        // Set the TX buffer descriptor queue address
+        eth.txqptr
+            .write(|reg| unsafe { reg.dmatxqptr().bits(self.tx_buffer.address() as u32 >> 2) });
+
+        // Set the hardware address filter, starting with the bottom register first
+        eth.specaddr1bottom
+            .write(|reg| unsafe { reg.addr().bits(0x00_00_00_02) });
+        eth.specaddr1top
+            .write(|reg| unsafe { reg.addr().bits(0x00_00_02_00) });
+
+        // Clear pending interrupts
+        nvic.clear_pending(Interrupt::ETH);
+        eth.ifcr.write(|reg| {
+            reg.mngmntdone().set_bit();
+            reg.rxcmplt().set_bit();
+            reg.rxusedbitread().set_bit();
+            reg.txusedbitread().set_bit();
+            reg.txunderrun().set_bit();
+            reg.rtrylmtorlatecol().set_bit();
+            reg.ambaerr().set_bit();
+            reg.txcmplt().set_bit();
+            reg.rxoverrun().set_bit();
+            reg.respnotok().set_bit();
+            reg.nonzeropfrmquant().set_bit();
+            reg.pausetimezero().set_bit();
+            reg.pfrmtx().set_bit();
+            reg.ptpdlyreqfrmrx().set_bit();
+            reg.ptpsyncfrmrx().set_bit();
+            reg.ptpdlyreqfrmtx().set_bit();
+            reg.ptpsyncfrmtx().set_bit();
+            reg.ptppdlyreqfrmrx().set_bit();
+            reg.ptppdlyrespfrmrx().set_bit();
+            reg.ptppdlyreqfrmtx().set_bit();
+            reg.ptppdlyrespfrmtx().set_bit();
+            reg.tsusecregincr().set_bit();
+            reg.rxlpiindc().set_bit();
+            reg.wolevntrx().set_bit();
+            reg.tsutimercomp().set_bit();
+            reg
+        });
+
+        // Enable interrupts
+        eth.iens.write(|reg| {
+            reg.mngmntdone().set_bit();
+            reg.rxcmplt().set_bit();
+            // TODO: What is this used for?
+            //reg.rxusedbitread().set_bit();
+            //reg.txusedbitread().set_bit();
+            reg.txunderrun().set_bit();
+            reg.rtrylmtorlatecol().set_bit();
+            reg.ambaerr().set_bit();
+            reg.txcmplt().set_bit();
+            reg.rxoverrun().set_bit();
+            reg.respnotok().set_bit();
+            reg.nonzeropfrmquant().set_bit();
+            reg.pausetimezero().set_bit();
+            reg.pfrmtx().set_bit();
+            reg.ptpdlyreqfrmrx().set_bit();
+            reg.ptpsyncfrmrx().set_bit();
+            reg.ptpdlyreqfrmtx().set_bit();
+            reg.ptpsyncfrmtx().set_bit();
+            reg.ptppdlyreqfrmrx().set_bit();
+            reg.ptppdlyrespfrmrx().set_bit();
+            reg.ptppdlyreqfrmtx().set_bit();
+            reg.ptppdlyrespfrmtx().set_bit();
+            reg.tsusecregincr().set_bit();
+            reg.rxlpiindc().set_bit();
+            reg.wolevntrx().set_bit();
+            reg.tsutimercomp().set_bit();
+            reg
+        });
+        nvic.enable(Interrupt::ETH);
+
+        // Enable transmitting/receiving and the management interface
+        eth.networkctrl.write(|reg| {
+            reg.enbrx().set_bit();
+            reg.enbtx().set_bit();
+            reg.manporten().set_bit();
+            reg
+        });
+
+        // Release the PHY reset
+        gpio.ph_dout
+            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 7)) });
+
+        // Enable the global clock
+        eth.ctrl.write(|reg| reg.gblclken().set_bit());
+
+        // XXX: Wait for the PHY
+        for _ in 0..1000 {
+            asm::nop();
+        }
+
+        let oui = (self.miim_read(eth, 0x00, 0x02) as u32) << 6
+            | (self.miim_read(eth, 0x00, 0x03) as u32) >> 10;
+
+        debug!(
+            "OUI: {:02X}:{:02X}:{:02X}",
+            (oui >> 16) as u8,
+            (oui >> 8) as u8,
+            oui as u8,
+        );
+    }
+
+    fn miim_read(&self, eth: &ETH, address: u8, register: u8) -> u16 {
+        eth.phymngmnt.write(|reg| {
+            unsafe { reg.phyaddr().bits(address) };
+            unsafe { reg.phyrwdata().bits(0x00) };
+            unsafe { reg.regaddr().bits(register) };
+            unsafe { reg.operation().bits(0b10) };
+
+            unsafe { reg.write10().bits(0b10) };
+            reg.write1().set_bit();
+            reg.write0().clear_bit();
+            reg
+        });
+
+        while eth.networkstatus.read().mandone().bit_is_clear() {}
+
+        eth.phymngmnt.read().phyrwdata().bits()
+    }
+
+    fn miim_write(&self, eth: &ETH, address: u8, register: u8, data: u16) {
+        eth.phymngmnt.write(|reg| {
+            unsafe { reg.phyaddr().bits(address) };
+            unsafe { reg.phyrwdata().bits(data) };
+            unsafe { reg.regaddr().bits(register) };
+            unsafe { reg.operation().bits(0b01) };
+
+            unsafe { reg.write10().bits(0b10) };
+            reg.write1().set_bit();
+            reg.write0().clear_bit();
+            reg
+        });
+
+        while eth.networkstatus.read().mandone().bit_is_clear() {}
+    }
+}
+
+pub fn isr() {
+    interrupt::free(|_| {
+        let eth = unsafe { &(*efm32gg11b820::ETH::ptr()) };
+        let gpio = unsafe { &(*efm32gg11b820::GPIO::ptr()) };
+        let int = eth.ifcr.read();
+
+        if int.mngmntdone().bit_is_set() {
+            eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
+        }
+        if int.rxcmplt().bit_is_set() {
+            eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
+            gpio.ph_dout.modify(|read, write| unsafe {
+                write
+                    .dout()
+                    .bits((read.dout().bits() & !(0x07 << 13)) | (0x05 << 13))
+            });
+        }
+        if int.rxoverrun().bit_is_set() {
+            eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
+            gpio.ph_dout.modify(|read, write| unsafe {
+                write
+                    .dout()
+                    .bits((read.dout().bits() & !(0x07 << 13)) | (0x04 << 13))
+            })
+        }
+        if int.txcmplt().bit_is_set() {
+            eth.ifcr.write(|reg| reg.txcmplt().set_bit());
+            gpio.ph_dout.modify(|read, write| unsafe {
+                write.dout().bits(read.dout().bits() | (0x07 << 10))
+            });
+        }
+        if int.txunderrun().bit_is_set() {
+            eth.ifcr.write(|reg| reg.txunderrun().set_bit());
+            gpio.ph_dout.modify(|read, write| unsafe {
+                write
+                    .dout()
+                    .bits((read.dout().bits() & !(0x07 << 10)) | (0x04 << 10))
+            })
+        }
+
+        let int = eth.ifcr.read();
+        if int.bits() != 0 {
+            debug!("Unhandled interrupt (ETH): {:#X}", int.bits());
+            eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
+            gpio.ph_dout.modify(|read, write| unsafe {
+                write
+                    .dout()
+                    .bits((read.dout().bits() & !(0x3F << 10)) | (0x3E << 10))
+            })
+        }
+    });
+}
+
+// XXX: This is only implemented on a mutable reference so that the descriptors within MAC don't
+// physically move due to a copy. The descriptors cannot move after configure has been called since
+// we've given the address to hardware. This would be a great application of the new Pin trait.
+impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
+    type RxToken = RxToken<'a>;
+    type TxToken = TxToken<'a>;
+
+    fn capabilities(&self) -> phy::DeviceCapabilities {
+        let mut caps = phy::DeviceCapabilities::default();
+        caps.max_transmission_unit = 1536;
+        caps.checksum.icmpv4 = phy::Checksum::Both;
+        caps.checksum.ipv4 = phy::Checksum::Both;
+        caps.checksum.tcp = phy::Checksum::Both;
+        caps.checksum.udp = phy::Checksum::Both;
+        caps
+    }
+
+    fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
+        let (start, end) = {
+            let mut start = None;
+            let mut end = None;
+            let descriptors = self.rx_buffer.descriptors();
+
+            for _ in 0..2 {
+                for i in 0..descriptors.len() {
+                    let d = &descriptors[i];
+
+                    if d.start_of_frame() && d.ownership() == BufferDescriptorOwnership::Software {
+                        start = Some(i);
+                    }
+                    if d.end_of_frame()
+                        && d.ownership() == BufferDescriptorOwnership::Software
+                        && start.is_some()
+                    {
+                        end = Some(i);
+                        break;
+                    }
+                    if d.ownership() == BufferDescriptorOwnership::Hardware {
+                        start = None;
+                        end = None;
+                    }
+                }
+
+                if start.is_none() || end.is_some() {
+                    break;
+                }
+            }
+
+            match (start, end) {
+                (Some(s), Some(e)) => (s, e),
+                _ => return None,
+            }
+        };
+
+        // XXX: This is a hack, but it seems to work.
+        let slot = (unsafe {
+            (*efm32gg11b820::ETH::ptr())
+                .txqptr
+                .read()
+                .dmatxqptr()
+                .bits() << 2
+        } - self.tx_buffer.address() as u32) as usize
+            / mem::size_of::<TxBufferDescriptor>();
+
+        Some((
+            RxToken {
+                descriptors: self.rx_buffer.descriptors_mut(),
+                start,
+                end,
+            },
+            TxToken {
+                descriptors: self.tx_buffer.descriptors_mut(),
+                slot,
+            },
+        ))
+    }
+
+    fn transmit(&'a mut self) -> Option<Self::TxToken> {
+        // XXX: This is a hack, but it seems to work.
+        let slot = (unsafe {
+            (*efm32gg11b820::ETH::ptr())
+                .txqptr
+                .read()
+                .dmatxqptr()
+                .bits() << 2
+        } - self.tx_buffer.address() as u32) as usize
+            / mem::size_of::<TxBufferDescriptor>();
+
+        Some(TxToken {
+            descriptors: self.tx_buffer.descriptors_mut(),
+            slot,
+        })
+    }
+}
+
+pub struct RxToken<'a> {
+    descriptors: &'a mut [RxBufferDescriptor],
+    start: usize,
+    end: usize,
+}
+
+impl<'a> phy::RxToken for RxToken<'a> {
+    fn consume<R, F>(self, _timestamp: time::Instant, f: F) -> smoltcp::Result<R>
+    where
+        F: FnOnce(&[u8]) -> smoltcp::Result<R>,
+    {
+        let mut data = [0; 1536];
+
+        let mut orig = self.start;
+        let mut dest = 0;
+        loop {
+            {
+                let d = &mut self.descriptors[orig];
+                data[(dest * 128)..][..128].copy_from_slice(unsafe {
+                    slice::from_raw_parts(d.address() as *const u8, 128)
+                });
+                d.release();
+            }
+
+            if orig == self.end {
+                break;
+            }
+
+            orig = (orig + 1) % self.descriptors.len();
+            dest += 1;
+        }
+
+        unsafe {
+            (*efm32gg11b820::GPIO::ptr())
+                .ph_dout
+                .modify(|read, write| write.dout().bits(read.dout().bits() | (0x07 << 13)));
+        };
+
+        f(&data)
+    }
+}
+
+pub struct TxToken<'a> {
+    descriptors: &'a mut [TxBufferDescriptor],
+    slot: usize,
+}
+
+impl<'a> phy::TxToken for TxToken<'a> {
+    fn consume<R, F>(self, _timestamp: time::Instant, len: usize, f: F) -> smoltcp::Result<R>
+    where
+        F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
+    {
+        trace!("Transmit");
+
+        // XXX: This should be able to write a frame into multiple buffers
+        if self.descriptors[self.slot].ownership() == BufferDescriptorOwnership::Hardware
+            || len > 768
+        {
+            return Err(Error::Exhausted);
+        }
+
+        let result = f(unsafe {
+            slice::from_raw_parts_mut(self.descriptors[self.slot].address() as *mut u8, len)
+        });
+        self.descriptors[self.slot].set_length(len);
+        self.descriptors[self.slot].set_last_buffer(true);
+        self.descriptors[self.slot].release();
+
+        unsafe {
+            (*efm32gg11b820::ETH::ptr())
+                .networkctrl
+                .modify(|_, reg| reg.txstrt().set_bit());
+        }
+
+        unsafe {
+            (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
+                write
+                    .dout()
+                    .bits((read.dout().bits() & !(0x07 << 10)) | (0x05 << 10))
+            });
+        }
+
+        result
+    }
+}
