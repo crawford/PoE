@@ -21,26 +21,59 @@ use core::{mem, slice};
 use cortex_m::{asm, interrupt};
 use dma::{BufferDescriptor, BufferDescriptorOwnership, RxBufferDescriptor, TxBufferDescriptor};
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
+use mac;
+use phy::{probe_for_phy, PHY};
 use smoltcp::{self, phy, time, Error};
 
-pub struct MAC<'a> {
-    rx_buffer: RxBuffer<'a>,
-    tx_buffer: TxBuffer<'a>,
+pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
+    mac: MAC<'a, 'b>,
+    phy: P,
 }
 
-impl<'a> MAC<'a> {
-    // TODO: This should probably accept a PHY so that this doesn't need to understand how to
-    // configure the PHY.
-    pub fn new(rx_buffer: RxBuffer<'a>, tx_buffer: TxBuffer<'a>) -> MAC<'a> {
-        MAC {
-            rx_buffer,
-            tx_buffer,
-        }
-    }
+impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
+    pub fn create<F>(
+        rx_buffer: &'a mut RxBuffer<'b>,
+        tx_buffer: &'a mut TxBuffer<'b>,
+        eth: &'a ETH,
+        cmu: &CMU,
+        gpio: &GPIO,
+        nvic: &mut NVIC,
+        new_phy: F,
+    ) -> Result<EFM32GG<'a, 'b, P>, &'static str>
+    where
+        F: FnOnce(u8) -> P,
+    {
+        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio, nvic);
 
+        // XXX: Wait for the PHY
+        for _ in 0..1000 {
+            asm::nop();
+        }
+
+        let phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
+        debug!("OUI: {}", phy.oui(&mac));
+
+        Ok(EFM32GG { mac, phy })
+    }
+}
+
+struct MAC<'a, 'b: 'a> {
+    rx_buffer: &'a mut RxBuffer<'b>,
+    tx_buffer: &'a mut TxBuffer<'b>,
+    eth: &'a ETH,
+}
+
+impl<'a, 'b: 'a> MAC<'a, 'b> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
-    pub fn configure(&mut self, eth: &ETH, cmu: &CMU, gpio: &GPIO, nvic: &mut NVIC) {
+    fn create(
+        rx_buffer: &'a mut RxBuffer<'b>,
+        tx_buffer: &'a mut TxBuffer<'b>,
+        eth: &'a ETH,
+        cmu: &CMU,
+        gpio: &GPIO,
+        nvic: &mut NVIC,
+    ) -> MAC<'a, 'b> {
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
@@ -121,11 +154,11 @@ impl<'a> MAC<'a> {
 
         // Set the RX buffer descriptor queue address
         eth.rxqptr
-            .write(|reg| unsafe { reg.dmarxqptr().bits(self.rx_buffer.address() as u32 >> 2) });
+            .write(|reg| unsafe { reg.dmarxqptr().bits(rx_buffer.address() as u32 >> 2) });
 
         // Set the TX buffer descriptor queue address
         eth.txqptr
-            .write(|reg| unsafe { reg.dmatxqptr().bits(self.tx_buffer.address() as u32 >> 2) });
+            .write(|reg| unsafe { reg.dmatxqptr().bits(tx_buffer.address() as u32 >> 2) });
 
         // Set the hardware address filter, starting with the bottom register first
         eth.specaddr1bottom
@@ -211,24 +244,17 @@ impl<'a> MAC<'a> {
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
 
-        // XXX: Wait for the PHY
-        for _ in 0..1000 {
-            asm::nop();
+        MAC {
+            rx_buffer,
+            tx_buffer,
+            eth,
         }
-
-        let oui = (self.miim_read(eth, 0x00, 0x02) as u32) << 6
-            | (self.miim_read(eth, 0x00, 0x03) as u32) >> 10;
-
-        debug!(
-            "OUI: {:02X}:{:02X}:{:02X}",
-            (oui >> 16) as u8,
-            (oui >> 8) as u8,
-            oui as u8,
-        );
     }
+}
 
-    fn miim_read(&self, eth: &ETH, address: u8, register: u8) -> u16 {
-        eth.phymngmnt.write(|reg| {
+impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
+    fn mdio_read(&self, address: u8, register: u8) -> u16 {
+        self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
             unsafe { reg.phyrwdata().bits(0x00) };
             unsafe { reg.regaddr().bits(register) };
@@ -240,13 +266,13 @@ impl<'a> MAC<'a> {
             reg
         });
 
-        while eth.networkstatus.read().mandone().bit_is_clear() {}
+        while self.eth.networkstatus.read().mandone().bit_is_clear() {}
 
-        eth.phymngmnt.read().phyrwdata().bits()
+        self.eth.phymngmnt.read().phyrwdata().bits()
     }
 
-    fn miim_write(&self, eth: &ETH, address: u8, register: u8, data: u16) {
-        eth.phymngmnt.write(|reg| {
+    fn mdio_write(&mut self, address: u8, register: u8, data: u16) {
+        self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
             unsafe { reg.phyrwdata().bits(data) };
             unsafe { reg.regaddr().bits(register) };
@@ -258,7 +284,7 @@ impl<'a> MAC<'a> {
             reg
         });
 
-        while eth.networkstatus.read().mandone().bit_is_clear() {}
+        while self.eth.networkstatus.read().mandone().bit_is_clear() {}
     }
 }
 
@@ -315,10 +341,7 @@ pub fn isr() {
     });
 }
 
-// XXX: This is only implemented on a mutable reference so that the descriptors within MAC don't
-// physically move due to a copy. The descriptors cannot move after configure has been called since
-// we've given the address to hardware. This would be a great application of the new Pin trait.
-impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
+impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
     type RxToken = RxToken<'a>;
     type TxToken = TxToken<'a>;
 
@@ -336,7 +359,7 @@ impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
         let (start, end) = {
             let mut start = None;
             let mut end = None;
-            let descriptors = self.rx_buffer.descriptors();
+            let descriptors = self.mac.rx_buffer.descriptors();
 
             for _ in 0..2 {
                 for i in 0..descriptors.len() {
@@ -376,17 +399,17 @@ impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
                 .read()
                 .dmatxqptr()
                 .bits() << 2
-        } - self.tx_buffer.address() as u32) as usize
+        } - self.mac.tx_buffer.address() as u32) as usize
             / mem::size_of::<TxBufferDescriptor>();
 
         Some((
             RxToken {
-                descriptors: self.rx_buffer.descriptors_mut(),
+                descriptors: self.mac.rx_buffer.descriptors_mut(),
                 start,
                 end,
             },
             TxToken {
-                descriptors: self.tx_buffer.descriptors_mut(),
+                descriptors: self.mac.tx_buffer.descriptors_mut(),
                 slot,
             },
         ))
@@ -400,11 +423,11 @@ impl<'a, 'b> phy::Device<'a> for &'b mut MAC<'b> {
                 .read()
                 .dmatxqptr()
                 .bits() << 2
-        } - self.tx_buffer.address() as u32) as usize
+        } - self.mac.tx_buffer.address() as u32) as usize
             / mem::size_of::<TxBufferDescriptor>();
 
         Some(TxToken {
-            descriptors: self.tx_buffer.descriptors_mut(),
+            descriptors: self.mac.tx_buffer.descriptors_mut(),
             slot,
         })
     }
