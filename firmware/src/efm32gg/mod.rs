@@ -22,7 +22,7 @@ use cortex_m::{asm, interrupt};
 use dma::{BufferDescriptor, BufferDescriptorOwnership, RxBufferDescriptor, TxBufferDescriptor};
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
 use mac;
-use phy::{probe_for_phy, PHY};
+use phy::{probe_for_phy, Register, PHY};
 use smoltcp::{self, phy, time, Error};
 
 pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
@@ -253,11 +253,11 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
 }
 
 impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
-    fn mdio_read(&self, address: u8, register: u8) -> u16 {
+    fn mdio_read(&self, address: u8, register: Register) -> u16 {
         self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
             unsafe { reg.phyrwdata().bits(0x00) };
-            unsafe { reg.regaddr().bits(register) };
+            unsafe { reg.regaddr().bits(register.into()) };
             unsafe { reg.operation().bits(0b10) };
 
             unsafe { reg.write10().bits(0b10) };
@@ -271,11 +271,11 @@ impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
         self.eth.phymngmnt.read().phyrwdata().bits()
     }
 
-    fn mdio_write(&mut self, address: u8, register: u8, data: u16) {
+    fn mdio_write(&mut self, address: u8, register: Register, data: u16) {
         self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
             unsafe { reg.phyrwdata().bits(data) };
-            unsafe { reg.regaddr().bits(register) };
+            unsafe { reg.regaddr().bits(register.into()) };
             unsafe { reg.operation().bits(0b01) };
 
             unsafe { reg.write10().bits(0b10) };

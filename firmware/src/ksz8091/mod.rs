@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use mac::MAC;
-use phy::{LinkState, OUI, PHY};
+use phy::{LinkState, Register, OUI, PHY};
 
 pub struct KSZ8091 {
     address: u8,
@@ -31,9 +31,10 @@ impl PHY for KSZ8091 {
         // Bits [18:23] of the OUI are in bits [15:10] of PHY ID 2.
         // Concatenating these two gives the OUI in bit-reverse order
         // (e.g. 0b00 [2:17] [18:23] 0000 0000).
-        let oui = ((mac.mdio_read(self.address, 0x02) as u32) << 14
-            | (mac.mdio_read(self.address, 0x03) as u32) >> 2)
-            .reverse_bits();
+        let id1 = mac.mdio_read(self.address, Register::PhyId1) as u32;
+        let id2 = mac.mdio_read(self.address, Register::PhyId2) as u32;
+
+        let oui = (id1 << 14 | id2 >> 2).reverse_bits();
         OUI([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
     }
 
