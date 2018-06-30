@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use phy::Register;
+
 pub trait MAC {
-    fn mdio_read(&self, address: u8, register: u8) -> u16;
-    fn mdio_write(&mut self, address: u8, register: u8, data: u16);
+    fn mdio_read(&self, address: u8, register: Register) -> u16;
+    fn mdio_write(&mut self, address: u8, register: Register, data: u16);
 }
