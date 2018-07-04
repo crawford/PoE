@@ -18,13 +18,13 @@ optional = true
 version = "*"
 features = [ "rt" ]
 
+[dependencies.log]
+version = "*"
+
 [dependencies.smoltcp]
 git = "https://github.com/m-labs/smoltcp"
 default-features = false
 features = [ "proto-ipv4", "socket-udp", "socket-tcp"  ]
-
-[dependencies.log]
-version = "*"
 
 [profile.dev]
 incremental = false
@@ -35,5 +35,4 @@ lto = true
 lto = true
 
 [features]
-#default = [ "logging" ]
 logging = [ "cortex-m-semihosting", "smoltcp/log" ]

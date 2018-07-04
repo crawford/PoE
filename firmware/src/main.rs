@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(panic_implementation)]
+#![feature(panic_implementation, reverse_bits)]
 #![no_main]
 #![no_std]
 
@@ -28,6 +28,9 @@ extern crate log;
 extern crate smoltcp;
 
 mod efm32gg;
+mod ksz8091;
+mod mac;
+mod phy;
 #[cfg(feature = "logging")]
 mod semihosting;
 
@@ -35,6 +38,7 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg::dma;
+use ksz8091::KSZ8091;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
 use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer, UdpSocket, UdpSocketBuffer};
 use smoltcp::storage::PacketMetadata;
@@ -96,16 +100,22 @@ fn main() -> ! {
     let mut neighbor_cache = [None; 8];
     let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 1, 0, 3), 24)];
 
-    let mut rx_buffer = dma::RxRegion([0; 1536]);
-    let mut tx_buffer = dma::TxRegion([0; 1536]);
-    let mut mac = efm32gg::MAC::new(
-        efm32gg::RxBuffer::new(&mut rx_buffer),
-        efm32gg::TxBuffer::new(&mut tx_buffer),
-    );
-    mac.configure(&eth, &cmu, &gpio, &mut nvic);
+    let mut rx_region = dma::RxRegion([0; 1536]);
+    let mut tx_region = dma::TxRegion([0; 1536]);
+    let mut rx_buffer = dma::RxBuffer::new(&mut rx_region);
+    let mut tx_buffer = dma::TxBuffer::new(&mut tx_region);
 
-    let mut iface = EthernetInterfaceBuilder::new(&mut mac)
-        .ethernet_addr(ethernet_addr)
+    let mut iface = EthernetInterfaceBuilder::new(
+        efm32gg::EFM32GG::create(
+            &mut rx_buffer,
+            &mut tx_buffer,
+            &eth,
+            &cmu,
+            &gpio,
+            &mut nvic,
+            KSZ8091::new,
+        ).expect("unable to create MACPHY"),
+    ).ethernet_addr(ethernet_addr)
         .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
         .ip_addrs(ip_addrs.as_mut())
         .finalize();

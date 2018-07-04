@@ -17,6 +17,7 @@ use core::fmt;
 
 #[repr(align(4))]
 pub struct RxRegion(pub [u8; 1536]);
+#[repr(align(4))]
 pub struct TxRegion(pub [u8; 1536]);
 
 #[derive(Debug, PartialEq)]
