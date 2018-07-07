@@ -67,7 +67,7 @@ impl<'a> RxBuffer<'a> {
         }
     }
 
-    pub fn descriptors(&mut self) -> &[RxBufferDescriptor] {
+    pub fn descriptors(&self) -> &[RxBufferDescriptor] {
         &self.descriptor_list
     }
 
@@ -180,22 +180,32 @@ impl RxBufferDescriptor {
 }
 
 pub struct TxBuffer<'a> {
-    data: UnsafeCell<&'a mut [u8; 768 * 2]>,
-    descriptor_list: [TxBufferDescriptor; 2],
+    data: UnsafeCell<&'a mut [u8; 128 * 12]>,
+    descriptor_list: [TxBufferDescriptor; 12],
 }
 
 impl<'a> TxBuffer<'a> {
     pub fn new(data: &'a mut TxRegion) -> TxBuffer<'a> {
         TxBuffer {
             descriptor_list: [
-                TxBufferDescriptor::new(&mut data.0[768 * 0] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[768 * 1] as *mut u8).end_of_list(),
+                TxBufferDescriptor::new(&mut data.0[128 * 0] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 1] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 2] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 3] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 4] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 5] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 6] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 7] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 8] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 9] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 10] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128 * 11] as *mut u8).end_of_list(),
             ],
             data: UnsafeCell::new(&mut data.0),
         }
     }
 
-    pub fn descriptors(&mut self) -> &[TxBufferDescriptor] {
+    pub fn descriptors(&self) -> &[TxBufferDescriptor] {
         &self.descriptor_list
     }
 

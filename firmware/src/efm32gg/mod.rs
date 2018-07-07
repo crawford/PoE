@@ -250,6 +250,89 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             eth,
         }
     }
+
+    fn find_rx_window(&self) -> Option<(usize, usize)> {
+        let mut start = None;
+        let mut end = None;
+        let descriptors = self.rx_buffer.descriptors();
+
+        for _ in 0..2 {
+            for i in 0..descriptors.len() {
+                let d = &descriptors[i];
+
+                if d.start_of_frame() && d.ownership() == BufferDescriptorOwnership::Software {
+                    start = Some(i);
+                }
+                if d.end_of_frame()
+                    && d.ownership() == BufferDescriptorOwnership::Software
+                    && start.is_some()
+                {
+                    end = Some(i);
+                    break;
+                }
+                if d.ownership() == BufferDescriptorOwnership::Hardware {
+                    start = None;
+                    end = None;
+                }
+            }
+
+            if start.is_none() || end.is_some() {
+                break;
+            }
+        }
+
+        match (start, end) {
+            (Some(s), Some(e)) => Some((s, e)),
+            _ => return None,
+        }
+    }
+
+    fn find_tx_window(&self) -> Option<(usize, usize)> {
+        let descriptors = self.tx_buffer.descriptors();
+        let queue_ptr = (unsafe {
+            (*efm32gg11b820::ETH::ptr())
+                .txqptr
+                .read()
+                .dmatxqptr()
+                .bits() << 2
+        } - self.tx_buffer.address() as u32) as usize
+            / mem::size_of::<TxBufferDescriptor>();
+
+        // Walk forward from the queue pointer (wrapping around to the beginning of the buffer if
+        // necessary), looking for the first unused descriptor. This will be the start of the
+        // transmit window.
+        let start = {
+            let mut start = None;
+            for i in 0..descriptors.len() {
+                let d = (queue_ptr + i) % descriptors.len();
+                if descriptors[d].ownership() == BufferDescriptorOwnership::Software {
+                    start = Some(d);
+                    break;
+                }
+            }
+
+            match start {
+                Some(idx) => idx,
+                None => return None,
+            }
+        };
+
+        // Walk forward from the start of the transmit window (wrapping around to the beginning of
+        // the buffer if necessary), looking for the last unused descriptor. This will be the end
+        // of the transmit window.
+        let mut len = 0;
+        for i in 1..descriptors.len() {
+            if descriptors[(start + i) % descriptors.len()].ownership()
+                == BufferDescriptorOwnership::Software
+            {
+                len = i;
+            } else {
+                break;
+            }
+        }
+
+        Some((start, len))
+    }
 }
 
 impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
@@ -356,79 +439,40 @@ impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let (start, end) = {
-            let mut start = None;
-            let mut end = None;
-            let descriptors = self.mac.rx_buffer.descriptors();
-
-            for _ in 0..2 {
-                for i in 0..descriptors.len() {
-                    let d = &descriptors[i];
-
-                    if d.start_of_frame() && d.ownership() == BufferDescriptorOwnership::Software {
-                        start = Some(i);
-                    }
-                    if d.end_of_frame()
-                        && d.ownership() == BufferDescriptorOwnership::Software
-                        && start.is_some()
-                    {
-                        end = Some(i);
-                        break;
-                    }
-                    if d.ownership() == BufferDescriptorOwnership::Hardware {
-                        start = None;
-                        end = None;
-                    }
-                }
-
-                if start.is_none() || end.is_some() {
-                    break;
-                }
-            }
-
-            match (start, end) {
-                (Some(s), Some(e)) => (s, e),
-                _ => return None,
-            }
+        let (rx_start, rx_end) = match self.mac.find_rx_window() {
+            Some((start, end)) => (start, end),
+            None => return None,
         };
 
-        // XXX: This is a hack, but it seems to work.
-        let slot = (unsafe {
-            (*efm32gg11b820::ETH::ptr())
-                .txqptr
-                .read()
-                .dmatxqptr()
-                .bits() << 2
-        } - self.mac.tx_buffer.address() as u32) as usize
-            / mem::size_of::<TxBufferDescriptor>();
+        let (tx_start, tx_len) = match self.mac.find_tx_window() {
+            Some((start, len)) => (start, len),
+            None => return None,
+        };
 
         Some((
             RxToken {
                 descriptors: self.mac.rx_buffer.descriptors_mut(),
-                start,
-                end,
+                start: rx_start,
+                end: rx_end,
             },
             TxToken {
                 descriptors: self.mac.tx_buffer.descriptors_mut(),
-                slot,
+                start: tx_start,
+                len: tx_len,
             },
         ))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        // XXX: This is a hack, but it seems to work.
-        let slot = (unsafe {
-            (*efm32gg11b820::ETH::ptr())
-                .txqptr
-                .read()
-                .dmatxqptr()
-                .bits() << 2
-        } - self.mac.tx_buffer.address() as u32) as usize
-            / mem::size_of::<TxBufferDescriptor>();
+        let (start, len) = match self.mac.find_tx_window() {
+            Some((start, len)) => (start, len),
+            None => return None,
+        };
 
         Some(TxToken {
             descriptors: self.mac.tx_buffer.descriptors_mut(),
-            slot,
+            start,
+            len,
         })
     }
 }
@@ -477,7 +521,8 @@ impl<'a> phy::RxToken for RxToken<'a> {
 
 pub struct TxToken<'a> {
     descriptors: &'a mut [TxBufferDescriptor],
-    slot: usize,
+    start: usize,
+    len: usize,
 }
 
 impl<'a> phy::TxToken for TxToken<'a> {
@@ -485,21 +530,28 @@ impl<'a> phy::TxToken for TxToken<'a> {
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        trace!("Transmit");
-
-        // XXX: This should be able to write a frame into multiple buffers
-        if self.descriptors[self.slot].ownership() == BufferDescriptorOwnership::Hardware
-            || len > 768
-        {
+        if len > (self.len * 128) {
             return Err(Error::Exhausted);
         }
 
-        let result = f(unsafe {
-            slice::from_raw_parts_mut(self.descriptors[self.slot].address() as *mut u8, len)
-        });
-        self.descriptors[self.slot].set_length(len);
-        self.descriptors[self.slot].set_last_buffer(true);
-        self.descriptors[self.slot].release();
+        debug_assert!(len > 0);
+        let last_buffer = (len - 1) / 128;
+
+        let mut data = [0; 1536];
+        let result = f(&mut data[0..len])?;
+
+        for i in 0..=last_buffer {
+            let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
+            unsafe { slice::from_raw_parts_mut(d.address() as *mut u8, 128) }
+                .copy_from_slice(&data[(i * 128)..][..128]);
+            if i == 0 {
+                d.set_length(len);
+            }
+            if i == last_buffer {
+                d.set_last_buffer(true);
+            }
+            d.release();
+        }
 
         unsafe {
             (*efm32gg11b820::ETH::ptr())
@@ -515,6 +567,6 @@ impl<'a> phy::TxToken for TxToken<'a> {
             });
         }
 
-        result
+        Ok(result)
     }
 }
