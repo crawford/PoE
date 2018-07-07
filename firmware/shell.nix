@@ -6,7 +6,7 @@ stdenv.mkDerivation {
   name = "poe";
   buildInputs = [
     ((rustChannelOf {
-      date = "2018-06-09";
+      date = "2018-07-07";
       channel = "nightly";
     }).rust.override {
       targets = [ "thumbv7m-none-eabi" ];
