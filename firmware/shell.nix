@@ -6,11 +6,11 @@ stdenv.mkDerivation {
   name = "poe";
   buildInputs = [
     ((rustChannelOf {
-      date = "2018-07-07";
+      date = "2018-07-18";
       channel = "nightly";
     }).rust.override {
       targets = [ "thumbv7m-none-eabi" ];
-      extensions = [ "rust-std" "rustfmt-preview" ];
+      extensions = [ "rust-std" "rustfmt-preview" "clippy-preview" ];
     })
     gcc-arm-embedded
   ];
