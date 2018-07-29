@@ -40,8 +40,7 @@ use cortex_m::{asm, interrupt, peripheral};
 use efm32gg::dma;
 use ksz8091::KSZ8091;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
-use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer, UdpSocket, UdpSocketBuffer};
-use smoltcp::storage::PacketMetadata;
+use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
@@ -120,15 +119,6 @@ fn main() -> ! {
         .ip_addrs(ip_addrs.as_mut())
         .finalize();
 
-    let mut udp_rx_payload = [0; 128];
-    let mut udp_rx_metadata = [PacketMetadata::EMPTY; 1];
-    let mut udp_tx_payload = [0; 128];
-    let mut udp_tx_metadata = [PacketMetadata::EMPTY; 1];
-    let udp_socket = UdpSocket::new(
-        UdpSocketBuffer::new(udp_rx_metadata.as_mut(), udp_rx_payload.as_mut()),
-        UdpSocketBuffer::new(udp_tx_metadata.as_mut(), udp_tx_payload.as_mut()),
-    );
-
     let mut tcp_rx_payload = [0; 128];
     let mut tcp_tx_payload = [0; 128];
     let tcp_socket = TcpSocket::new(
@@ -136,33 +126,21 @@ fn main() -> ! {
         TcpSocketBuffer::new(tcp_tx_payload.as_mut()),
     );
 
-    let mut sockets = [None, None];
-    let mut socket_set = SocketSet::new(sockets.as_mut());
-    //let udp_handle = socket_set.add(udp_socket);
-    let tcp_handle = socket_set.add(tcp_socket);
+    let mut socket_array = [None];
+    let mut sockets = SocketSet::new(socket_array.as_mut());
+    let tcp_handle = sockets.add(tcp_socket);
 
     loop {
         asm::wfe();
 
         let timestamp = Instant::from_millis(0);
-        match iface.poll(&mut socket_set, timestamp) {
+        match iface.poll(&mut sockets, timestamp) {
             Ok(_) => {}
             Err(err) => error!("Failed to poll: {}", err),
         }
 
-        //{
-        //    let mut socket = socket_set.get::<UdpSocket>(udp_handle);
-        //    if !socket.is_open() {
-        //        socket.bind(6969).unwrap()
-        //    }
-
-        //    if let Ok((data, endpoint)) = socket.recv() {
-        //        debug!("udp:6969 recv data: '{}' from {}", core::str::from_utf8(data).unwrap_or("(invalid utf8)"), endpoint);
-        //    }
-        //}
-
         {
-            let mut socket = socket_set.get::<TcpSocket>(tcp_handle);
+            let mut socket = sockets.get::<TcpSocket>(tcp_handle);
             if !socket.is_open() {
                 socket.listen(6969).unwrap();
             }

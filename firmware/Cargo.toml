@@ -24,7 +24,7 @@ version = "*"
 [dependencies.smoltcp]
 git = "https://github.com/m-labs/smoltcp"
 default-features = false
-features = [ "proto-ipv4", "socket-udp", "socket-tcp"  ]
+features = [ "proto-ipv4", "socket-tcp"  ]
 
 [profile.dev]
 incremental = false
