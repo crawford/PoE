@@ -257,9 +257,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         let descriptors = self.rx_buffer.descriptors();
 
         for _ in 0..2 {
-            for i in 0..descriptors.len() {
-                let d = &descriptors[i];
-
+            for (i, d) in descriptors.iter().enumerate() {
                 if d.start_of_frame() && d.ownership() == BufferDescriptorOwnership::Software {
                     start = Some(i);
                 }
@@ -283,7 +281,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
 
         match (start, end) {
             (Some(s), Some(e)) => Some((s, e)),
-            _ => return None,
+            _ => None,
         }
     }
 

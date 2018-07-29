@@ -31,8 +31,8 @@ impl PHY for KSZ8091 {
         // Bits [18:23] of the OUI are in bits [15:10] of PHY ID 2.
         // Concatenating these two gives the OUI in bit-reverse order
         // (e.g. 0b00 [2:17] [18:23] 0000 0000).
-        let id1 = mac.mdio_read(self.address, Register::PhyId1) as u32;
-        let id2 = mac.mdio_read(self.address, Register::PhyId2) as u32;
+        let id1 = u32::from(mac.mdio_read(self.address, Register::PhyId1));
+        let id2 = u32::from(mac.mdio_read(self.address, Register::PhyId2));
 
         let oui = (id1 << 14 | id2 >> 2).reverse_bits();
         OUI([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])

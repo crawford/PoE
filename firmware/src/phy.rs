@@ -85,13 +85,8 @@ pub fn probe_for_phy<M: MAC>(mac: &M) -> Option<u8> {
         let id1 = mac.mdio_read(*addr, Register::PhyId1);
         let id2 = mac.mdio_read(*addr, Register::PhyId2);
 
-        ((id1 != 0x0000 || id2 != 0x0000)
-            && (id1 != 0x0000 || id2 != 0x3FFF)
-            && (id1 != 0x0000 || id2 != 0xFFFF)
-            && (id1 != 0x3FFF || id2 != 0x0000)
-            && (id1 != 0x3FFF || id2 != 0x3FFF)
-            && (id1 != 0x3FFF || id2 != 0xFFFF)
-            && (id1 != 0xFFFF || id2 != 0x0000)
-            && (id1 != 0xFFFF || id2 != 0xFFFF))
+        id1 != 0x0000 && id1 != 0x3FFF && id2 != 0x0000 && id2 != 0xFFFF
+            || id1 != 0x0000 && id1 != 0x3FFF && id1 != 0xFFFF
+            || id2 != 0x0000 && id2 != 0x3FFF && id2 != 0xFFFF
     })
 }

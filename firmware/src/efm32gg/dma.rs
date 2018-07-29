@@ -20,13 +20,13 @@ pub struct RxRegion(pub [u8; 1536]);
 #[repr(align(4))]
 pub struct TxRegion(pub [u8; 1536]);
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BufferDescriptorOwnership {
     Software,
     Hardware,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BufferDescriptorListWrap {
     NoWrap,
     Wrap,
@@ -50,8 +50,8 @@ impl<'a> RxBuffer<'a> {
     pub fn new(data: &'a mut RxRegion) -> RxBuffer<'a> {
         RxBuffer {
             descriptor_list: [
-                RxBufferDescriptor::new(&mut data.0[128 * 0] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 1] as *mut u8),
+                RxBufferDescriptor::new(&mut data.0[0] as *mut u8),
+                RxBufferDescriptor::new(&mut data.0[128] as *mut u8),
                 RxBufferDescriptor::new(&mut data.0[128 * 2] as *mut u8),
                 RxBufferDescriptor::new(&mut data.0[128 * 3] as *mut u8),
                 RxBufferDescriptor::new(&mut data.0[128 * 4] as *mut u8),
@@ -100,7 +100,7 @@ impl fmt::Debug for RxBufferDescriptor {
 
 impl BufferDescriptor for RxBufferDescriptor {
     fn new(address: *mut u8) -> RxBufferDescriptor {
-        debug_assert!((address as u32 & 0x0000_0003) == 0);
+        debug_assert!((address as u32).trailing_zeros() >= 2);
 
         RxBufferDescriptor {
             address: UnsafeCell::new(
@@ -188,8 +188,8 @@ impl<'a> TxBuffer<'a> {
     pub fn new(data: &'a mut TxRegion) -> TxBuffer<'a> {
         TxBuffer {
             descriptor_list: [
-                TxBufferDescriptor::new(&mut data.0[128 * 0] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 1] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[0] as *mut u8),
+                TxBufferDescriptor::new(&mut data.0[128] as *mut u8),
                 TxBufferDescriptor::new(&mut data.0[128 * 2] as *mut u8),
                 TxBufferDescriptor::new(&mut data.0[128 * 3] as *mut u8),
                 TxBufferDescriptor::new(&mut data.0[128 * 4] as *mut u8),

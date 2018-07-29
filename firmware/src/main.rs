@@ -147,7 +147,7 @@ fn main() -> ! {
 
             if socket.can_send() {
                 debug!("tcp:6969 send greeting");
-                write!(socket, "hello\n").unwrap();
+                writeln!(socket, "hello").unwrap();
                 debug!("tcp:6969 close");
                 socket.close();
             }
@@ -174,7 +174,9 @@ pub fn panic(_info: &PanicInfo) -> ! {
     if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
         asm::bkpt();
     }
-    loop {}
+    loop {
+        asm::wfe();
+    }
 }
 
 // Light up both LEDs red, trigger a breakpoint, and loop
@@ -193,7 +195,9 @@ fn default_handler(_irqn: i16) {
     if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
         asm::bkpt();
     }
-    loop {}
+    loop {
+        asm::wfe();
+    }
 }
 
 exception!(HardFault, hardfault_handler);
@@ -211,5 +215,7 @@ fn hardfault_handler(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
         asm::bkpt();
     }
-    loop {}
+    loop {
+        asm::wfe();
+    }
 }
