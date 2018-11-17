@@ -46,7 +46,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 #[cfg(feature = "logging")]
 static LOGGER: semihosting::Logger = semihosting::Logger;
 
-entry!(main);
+#[entry]
 fn main() -> ! {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
@@ -178,8 +178,8 @@ pub fn panic(_info: &PanicInfo) -> ! {
 }
 
 // Light up both LEDs red, trigger a breakpoint, and loop
-exception!(*, default_handler);
-fn default_handler(_irqn: i16) {
+#[exception]
+fn DefaultHandler(_irqn: i16) {
     interrupt::disable();
 
     unsafe {
@@ -198,8 +198,8 @@ fn default_handler(_irqn: i16) {
     }
 }
 
-exception!(HardFault, hardfault_handler);
-fn hardfault_handler(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
+#[exception]
+fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     interrupt::disable();
 
     unsafe {

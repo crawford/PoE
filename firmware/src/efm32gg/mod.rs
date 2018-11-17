@@ -167,7 +167,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             .write(|reg| unsafe { reg.addr().bits(0x00_00_02_00) });
 
         // Clear pending interrupts
-        nvic.clear_pending(Interrupt::ETH);
+        efm32gg11b820::NVIC::unpend(Interrupt::ETH);
         eth.ifcr.write(|reg| {
             reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
