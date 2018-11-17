@@ -5,6 +5,4 @@ target = "thumbv7m-none-eabi"
 runner = "./flash.sh"
 rustflags = [
 	"--codegen", "link-arg=-Tlink.x",
-	"--codegen", "linker=arm-none-eabi-ld",
-	"-Z", "linker-flavor=ld",
 ]

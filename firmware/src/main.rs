@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(panic_implementation, reverse_bits)]
 #![no_main]
 #![no_std]
 
@@ -158,8 +157,7 @@ fn main() -> ! {
 interrupt!(ETH, efm32gg::isr);
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
-#[panic_implementation]
-#[no_mangle]
+#[panic_handler]
 pub fn panic(_info: &PanicInfo) -> ! {
     interrupt::disable();
 

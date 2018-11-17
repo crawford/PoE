@@ -34,7 +34,8 @@ impl PHY for KSZ8091 {
         let id1 = u32::from(mac.mdio_read(self.address, Register::PhyId1));
         let id2 = u32::from(mac.mdio_read(self.address, Register::PhyId2));
 
-        let oui = (id1 << 14 | id2 >> 2).reverse_bits();
+        // TODO: Use u32::reverse_bits once it is stablized.
+        let oui = reverse(id1 << 14 | id2 >> 2);
         OUI([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
     }
 
@@ -45,4 +46,13 @@ impl PHY for KSZ8091 {
     fn set_link_state(&mut self, _mac: &MAC, _state: LinkState) {
         unimplemented!()
     }
+}
+
+fn reverse(mut x: u32) -> u32 {
+    x = ((x >> 1) & 0x5555_5555) | ((x & 0x5555_5555) << 1);
+    x = ((x >> 2) & 0x3333_3333) | ((x & 0x3333_3333) << 2);
+    x = ((x >> 4) & 0x0f0f_0f0f) | ((x & 0x0f0f_0f0f) << 4);
+    x = ((x >> 8) & 0x00ff_00ff) | ((x & 0x00ff_00ff) << 8);
+    x = ((x >> 16) & 0x0000_ffff) | ((x & 0x0000_ffff) << 16);
+    x
 }
