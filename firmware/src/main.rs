@@ -15,17 +15,6 @@
 #![no_main]
 #![no_std]
 
-extern crate cortex_m;
-#[macro_use]
-extern crate cortex_m_rt;
-#[cfg(feature = "logging")]
-extern crate cortex_m_semihosting;
-#[macro_use]
-extern crate efm32gg11b820;
-#[macro_use]
-extern crate log;
-extern crate smoltcp;
-
 mod efm32gg;
 mod ksz8091;
 mod mac;
@@ -33,12 +22,12 @@ mod phy;
 #[cfg(feature = "logging")]
 mod semihosting;
 
+use crate::efm32gg::dma;
+use crate::ksz8091::KSZ8091;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use cortex_m::{asm, peripheral};
-use efm32gg::dma;
 use efm32gg11b820::interrupt;
-use ksz8091::KSZ8091;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
 use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
@@ -47,7 +36,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 #[cfg(feature = "logging")]
 static LOGGER: semihosting::Logger = semihosting::Logger;
 
-#[entry]
+#[cortex_m_rt::entry]
 fn main() -> ! {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
@@ -138,7 +127,7 @@ fn main() -> ! {
         let timestamp = Instant::from_millis(0);
         match iface.poll(&mut sockets, timestamp) {
             Ok(_) => {}
-            Err(err) => error!("Failed to poll: {}", err),
+            Err(err) => log::error!("Failed to poll: {}", err),
         }
 
         {
@@ -148,16 +137,16 @@ fn main() -> ! {
             }
 
             if socket.can_send() {
-                debug!("tcp:6969 send greeting");
+                log::debug!("tcp:6969 send greeting");
                 writeln!(socket, "hello").unwrap();
-                debug!("tcp:6969 close");
+                log::debug!("tcp:6969 close");
                 socket.close();
             }
         }
     }
 }
 
-#[interrupt]
+#[efm32gg11b820::interrupt]
 fn ETH() {
     efm32gg::isr()
 }
@@ -184,7 +173,7 @@ pub fn panic(_info: &PanicInfo) -> ! {
 }
 
 // Light up both LEDs red, trigger a breakpoint, and loop
-#[exception]
+#[cortex_m_rt::exception]
 fn DefaultHandler(_irqn: i16) {
     cortex_m::interrupt::disable();
 
@@ -204,7 +193,7 @@ fn DefaultHandler(_irqn: i16) {
     }
 }
 
-#[exception]
+#[cortex_m_rt::exception]
 fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     cortex_m::interrupt::disable();
 

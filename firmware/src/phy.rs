@@ -14,8 +14,8 @@
 
 // XXX: Figure out error handling
 
+use crate::mac::MAC;
 use core::fmt;
-use mac::MAC;
 
 pub trait PHY {
     fn oui(&self, mac: &MAC) -> OUI;

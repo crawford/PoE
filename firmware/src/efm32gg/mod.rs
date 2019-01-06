@@ -14,15 +14,17 @@
 
 pub mod dma;
 
-pub use dma::RxBuffer;
-pub use dma::TxBuffer;
+pub use crate::dma::RxBuffer;
+pub use crate::dma::TxBuffer;
 
+use crate::dma::{
+    BufferDescriptor, BufferDescriptorOwnership, RxBufferDescriptor, TxBufferDescriptor,
+};
+use crate::mac;
+use crate::phy::{probe_for_phy, Register, PHY};
 use core::{mem, slice};
 use cortex_m::{asm, interrupt};
-use dma::{BufferDescriptor, BufferDescriptorOwnership, RxBufferDescriptor, TxBufferDescriptor};
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
-use mac;
-use phy::{probe_for_phy, Register, PHY};
 use smoltcp::{self, phy, time, Error};
 
 pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
@@ -51,7 +53,7 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
         }
 
         let phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
-        debug!("OUI: {}", phy.oui(&mac));
+        log::debug!("OUI: {}", phy.oui(&mac));
 
         Ok(EFM32GG { mac, phy })
     }
@@ -412,7 +414,7 @@ pub fn isr() {
 
         let int = eth.ifcr.read();
         if int.bits() != 0 {
-            debug!("Unhandled interrupt (ETH): {:#X}", int.bits());
+            log::debug!("Unhandled interrupt (ETH): {:#X}", int.bits());
             eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
             gpio.ph_dout.modify(|read, write| unsafe {
                 write

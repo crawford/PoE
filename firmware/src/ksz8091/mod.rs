@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use mac::MAC;
-use phy::{LinkState, Register, OUI, PHY};
+use crate::mac::MAC;
+use crate::phy::{LinkState, Register, OUI, PHY};
 
 pub struct KSZ8091 {
     address: u8,
