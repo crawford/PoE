@@ -30,7 +30,8 @@ impl log::Log for Logger {
                 "{} - {}",
                 record.level(),
                 record.args()
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 

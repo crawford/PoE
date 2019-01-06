@@ -292,7 +292,8 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
                 .txqptr
                 .read()
                 .dmatxqptr()
-                .bits() << 2
+                .bits()
+                << 2
         } - self.tx_buffer.address() as u32) as usize
             / mem::size_of::<TxBufferDescriptor>();
 

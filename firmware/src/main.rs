@@ -113,11 +113,13 @@ fn main() -> ! {
             &gpio,
             &mut nvic,
             KSZ8091::new,
-        ).expect("unable to create MACPHY"),
-    ).ethernet_addr(ethernet_addr)
-        .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
-        .ip_addrs(ip_addrs.as_mut())
-        .finalize();
+        )
+        .expect("unable to create MACPHY"),
+    )
+    .ethernet_addr(ethernet_addr)
+    .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
+    .ip_addrs(ip_addrs.as_mut())
+    .finalize();
 
     let mut tcp_rx_payload = [0; 128];
     let mut tcp_tx_payload = [0; 128];
@@ -159,7 +161,6 @@ fn main() -> ! {
 fn ETH() {
     efm32gg::isr()
 }
-
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
 #[panic_handler]
