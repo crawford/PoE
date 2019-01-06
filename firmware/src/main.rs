@@ -35,8 +35,9 @@ mod semihosting;
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use cortex_m::{asm, interrupt, peripheral};
+use cortex_m::{asm, peripheral};
 use efm32gg::dma;
+use efm32gg11b820::interrupt;
 use ksz8091::KSZ8091;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
 use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
@@ -154,12 +155,16 @@ fn main() -> ! {
     }
 }
 
-interrupt!(ETH, efm32gg::isr);
+#[interrupt]
+fn ETH() {
+    efm32gg::isr()
+}
+
 
 // Light up both LEDs yellow, trigger a breakpoint, and loop
 #[panic_handler]
 pub fn panic(_info: &PanicInfo) -> ! {
-    interrupt::disable();
+    cortex_m::interrupt::disable();
 
     unsafe {
         (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
@@ -180,7 +185,7 @@ pub fn panic(_info: &PanicInfo) -> ! {
 // Light up both LEDs red, trigger a breakpoint, and loop
 #[exception]
 fn DefaultHandler(_irqn: i16) {
-    interrupt::disable();
+    cortex_m::interrupt::disable();
 
     unsafe {
         (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
@@ -200,7 +205,7 @@ fn DefaultHandler(_irqn: i16) {
 
 #[exception]
 fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
-    interrupt::disable();
+    cortex_m::interrupt::disable();
 
     unsafe {
         (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
