@@ -44,6 +44,7 @@ fn main() -> ! {
     let gpio = peripherals.GPIO;
     let msc = peripherals.MSC;
     let mut nvic = efm32gg11b820::CorePeripherals::take().unwrap().NVIC;
+    let rtc = peripherals.RTC;
 
     // Enable the HFXO
     cmu.oscencmd.write(|reg| reg.hfxoen().set_bit());
@@ -65,7 +66,18 @@ fn main() -> ! {
     // Update the EMU configuration
     let _ = cmu.status.read().bits();
 
-    cmu.hfbusclken0.write(|reg| reg.gpio().set_bit());
+    // Enable the GPIOs and the low energy peripheral interface
+    cmu.hfbusclken0.write(|reg| {
+        reg.gpio().set_bit();
+        reg.le().set_bit();
+        reg
+    });
+
+    // Enable the RTC and set it to 1000Hz
+    cmu.lfaclksel.write(|reg| reg.lfa().ulfrco());
+    cmu.lfaclken0.write(|reg| reg.rtc().set_bit());
+    rtc.ctrl.write(|reg| reg.en().set_bit());
+
     gpio.ph_dout
         .write(|reg| unsafe { reg.dout().bits(0x3F << 10) });
     gpio.ph_modeh.write(|reg| {
@@ -124,7 +136,7 @@ fn main() -> ! {
     loop {
         asm::wfe();
 
-        let timestamp = Instant::from_millis(0);
+        let timestamp = Instant::from_millis(rtc.cnt.read().cnt().bits());
         match iface.poll(&mut sockets, timestamp) {
             Ok(_) => {}
             Err(err) => log::error!("Failed to poll: {}", err),
