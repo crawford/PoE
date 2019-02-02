@@ -15,6 +15,7 @@ led = "0.2.0"
 log = "0.4.8"
 panic-itm = "0.4.1"
 smoltcp = { version = "0.6.0", default-features = false, features = [ "ethernet", "proto-dhcpv4", "socket-tcp" ] }
+vcell = "0.1.2"
 
 [profile.release]
 lto = true

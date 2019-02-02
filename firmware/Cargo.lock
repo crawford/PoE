@@ -173,6 +173,7 @@ dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "panic-itm 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "smoltcp 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vcell 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

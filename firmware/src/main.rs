@@ -17,6 +17,7 @@
 
 extern crate panic_itm;
 
+mod device_info;
 mod efm32gg;
 mod ksz8091;
 mod mac;
@@ -40,6 +41,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 fn main() -> ! {
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
+    let emu = peripherals.EMU;
     let eth = peripherals.ETH;
     let gpio = peripherals.GPIO;
     let msc = peripherals.MSC;
@@ -167,9 +169,19 @@ fn main() -> ! {
             }
 
             if socket.can_send() {
-                log::debug!("tcp:6969 send greeting");
-                writeln!(socket, "hello").unwrap();
-                log::debug!("tcp:6969 close");
+                let cal_temp = f32::from(device_info::PageEntryMap::get().cal.temp());
+                let cal_read = f32::from(device_info::PageEntryMap::get().emutemp.emuroomtemp());
+                let cur_read = f32::from(emu.temp.read().temp().bits());
+
+                let temperature = cal_temp + (0.278 + cal_read / 100.) * (cal_read - cur_read);
+
+                writeln!(
+                    socket,
+                    "EMU Temperature: {}°C ({}°F)",
+                    temperature,
+                    temperature * 9. / 5. + 32.
+                )
+                .unwrap();
                 socket.close();
             }
         }
