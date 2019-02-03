@@ -169,8 +169,9 @@ fn main() -> ! {
             }
 
             if socket.can_send() {
-                let cal_temp = f32::from(device_info::PageEntryMap::get().cal.temp());
-                let cal_read = f32::from(device_info::PageEntryMap::get().emutemp.emuroomtemp());
+                let info = device_info::PageEntryMap::get();
+                let cal_temp = f32::from(info.cal.temp());
+                let cal_read = f32::from(info.emutemp.emuroomtemp());
                 let cur_read = f32::from(emu.temp.read().temp().bits());
 
                 let temperature = cal_temp + (0.278 + cal_read / 100.) * (cal_read - cur_read);
@@ -182,6 +183,28 @@ fn main() -> ! {
                     temperature * 9. / 5. + 32.
                 )
                 .unwrap();
+
+                writeln!(
+                    socket,
+                    "OUI:             {:#08X}",
+                    (info.eui48h.oui48h() as u32) << 16 | info.eui48l.oui48l() as u32
+                )
+                .unwrap();
+
+                writeln!(
+                    socket,
+                    "Unique ID:       {:#08X}",
+                    info.eui48l.uniqueid()
+                )
+                .unwrap();
+
+                writeln!(
+                    socket,
+                    "Device ID:       {:#18X}",
+                    (info.uniqueh.uniqueh() as u64) << 32 | info.uniquel.uniquel() as u64
+                )
+                .unwrap();
+
                 socket.close();
             }
         }

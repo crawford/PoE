@@ -21,10 +21,10 @@ pub struct PageEntryMap {
     _reserved1: [u32; 1],
 
     /// EUI48 OUI and Unique identifier
-    pub eui48l: Unimplemented,
+    pub eui48l: EUI48L,
 
     /// OUI
-    pub eui48h: Unimplemented,
+    pub eui48h: EUI48H,
 
     /// Custom information
     pub custominfo: Unimplemented,
@@ -36,10 +36,10 @@ pub struct PageEntryMap {
     _reserved2: [u32; 2],
 
     /// Low 32 bits of device unique number
-    pub uniquel: Unimplemented,
+    pub uniquel: UNIQUEL,
 
     /// High 32 bits of device unique number
-    pub uniqueh: Unimplemented,
+    pub uniqueh: UNIQUEH,
 
     /// Flash and SRAM Memory size in kB
     pub msize: Unimplemented,
@@ -337,12 +337,6 @@ pub struct PageEntryMap {
 
     /// USHFRCO Calibration Register (50 MHz)
     pub ushfrcocal14: Unimplemented,
-
-    // Reserved
-    _reserved18: [u32; 9],
-
-    /// 5V Current monitor Transconductance
-    pub currmon5v: Unimplemented,
 }
 
 impl PageEntryMap {
@@ -366,6 +360,50 @@ impl CAL {
 
     pub fn crc(&self) -> u16 {
         self.entry.get() as u16
+    }
+}
+
+pub struct EUI48L {
+    entry: VolatileCell<u32>,
+}
+
+impl EUI48L {
+    pub fn oui48l(&self) -> u8 {
+        (self.entry.get() >> 24) as u8
+    }
+
+    pub fn uniqueid(&self) -> u32 {
+        self.entry.get() & 0x00FF_FFFF
+    }
+}
+
+pub struct EUI48H {
+    entry: VolatileCell<u32>,
+}
+
+impl EUI48H {
+    pub fn oui48h(&self) -> u16 {
+        self.entry.get() as u16
+    }
+}
+
+pub struct UNIQUEL {
+    entry: VolatileCell<u32>,
+}
+
+impl UNIQUEL {
+    pub fn uniquel(&self) -> u32 {
+        self.entry.get()
+    }
+}
+
+pub struct UNIQUEH {
+    entry: VolatileCell<u32>,
+}
+
+impl UNIQUEH {
+    pub fn uniqueh(&self) -> u32 {
+        self.entry.get()
     }
 }
 
