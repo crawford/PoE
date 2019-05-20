@@ -487,7 +487,7 @@ pub struct RxToken<'a> {
 impl<'a> phy::RxToken for RxToken<'a> {
     fn consume<R, F>(self, _timestamp: time::Instant, f: F) -> smoltcp::Result<R>
     where
-        F: FnOnce(&[u8]) -> smoltcp::Result<R>,
+        F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
         let mut data = [0; 1536];
 
@@ -516,7 +516,7 @@ impl<'a> phy::RxToken for RxToken<'a> {
                 .modify(|read, write| write.dout().bits(read.dout().bits() | (0x07 << 13)));
         };
 
-        f(&data)
+        f(&mut data)
     }
 }
 
