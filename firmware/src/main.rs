@@ -28,6 +28,10 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use cortex_m::{asm, peripheral};
 use efm32gg11b820::interrupt;
+use efm32gg_hal::cmu::CMUExt;
+use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
+use led::rgb::{self, Color};
+use led::LED;
 use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
 use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
@@ -93,7 +97,7 @@ fn main() -> ! {
     #[cfg(feature = "logging")]
     {
         log::set_logger(&LOGGER).unwrap();
-        log::set_max_level(log::LevelFilter::Trace);
+        log::set_max_level(log::LevelFilter::Warn);
     }
 
     let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
@@ -168,13 +172,25 @@ fn ETH() {
 pub fn panic(_info: &PanicInfo) -> ! {
     cortex_m::interrupt::disable();
 
-    unsafe {
-        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
-            write
-                .dout()
-                .bits((read.dout().bits() & !(0x3F << 10)) | (0x24 << 10))
-        })
-    };
+    let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
+        (unsafe { &*efm32gg11b820::CMU::ptr() })
+            .constrain()
+            .split()
+            .gpio,
+    );
+    let mut led0 = rgb::CommonAnodeLED::new(
+        gpio.ph10.as_output(),
+        gpio.ph11.as_output(),
+        gpio.ph12.as_output(),
+    );
+    let mut led1 = rgb::CommonAnodeLED::new(
+        gpio.ph13.as_output(),
+        gpio.ph14.as_output(),
+        gpio.ph15.as_output(),
+    );
+
+    led0.set(Color::Yellow);
+    led1.set(Color::Yellow);
 
     if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
         asm::bkpt();
@@ -189,13 +205,25 @@ pub fn panic(_info: &PanicInfo) -> ! {
 fn DefaultHandler(_irqn: i16) {
     cortex_m::interrupt::disable();
 
-    unsafe {
-        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
-            write
-                .dout()
-                .bits((read.dout().bits() & !(0x3F << 10)) | (0x36 << 10))
-        })
-    };
+    let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
+        (unsafe { &*efm32gg11b820::CMU::ptr() })
+            .constrain()
+            .split()
+            .gpio,
+    );
+    let mut led0 = rgb::CommonAnodeLED::new(
+        gpio.ph10.as_output(),
+        gpio.ph11.as_output(),
+        gpio.ph12.as_output(),
+    );
+    let mut led1 = rgb::CommonAnodeLED::new(
+        gpio.ph13.as_output(),
+        gpio.ph14.as_output(),
+        gpio.ph15.as_output(),
+    );
+
+    led0.set(Color::Red);
+    led1.set(Color::Red);
 
     if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
         asm::bkpt();
@@ -209,13 +237,25 @@ fn DefaultHandler(_irqn: i16) {
 fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     cortex_m::interrupt::disable();
 
-    unsafe {
-        (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
-            write
-                .dout()
-                .bits((read.dout().bits() & !(0x3F << 10)) | (0x36 << 10))
-        })
-    };
+    let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
+        (unsafe { &*efm32gg11b820::CMU::ptr() })
+            .constrain()
+            .split()
+            .gpio,
+    );
+    let mut led0 = rgb::CommonAnodeLED::new(
+        gpio.ph10.as_output(),
+        gpio.ph11.as_output(),
+        gpio.ph12.as_output(),
+    );
+    let mut led1 = rgb::CommonAnodeLED::new(
+        gpio.ph13.as_output(),
+        gpio.ph14.as_output(),
+        gpio.ph15.as_output(),
+    );
+
+    led0.set(Color::Red);
+    led1.set(Color::Red);
 
     if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
         asm::bkpt();
