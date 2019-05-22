@@ -93,7 +93,7 @@ fn main() -> ! {
     #[cfg(feature = "logging")]
     {
         log::set_logger(&LOGGER).unwrap();
-        log::set_max_level(log::LevelFilter::Trace);
+        log::set_max_level(log::LevelFilter::Warn);
     }
 
     let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);

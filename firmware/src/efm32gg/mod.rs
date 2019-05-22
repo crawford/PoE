@@ -414,7 +414,7 @@ pub fn isr() {
 
         let int = eth.ifcr.read();
         if int.bits() != 0 {
-            log::debug!("Unhandled interrupt (ETH): {:#X}", int.bits());
+            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
             eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
             gpio.ph_dout.modify(|read, write| unsafe {
                 write
