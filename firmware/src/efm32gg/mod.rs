@@ -14,17 +14,18 @@
 
 pub mod dma;
 
-pub use crate::dma::RxBuffer;
-pub use crate::dma::TxBuffer;
-
 use crate::dma::{
-    BufferDescriptor, BufferDescriptorOwnership, RxBufferDescriptor, TxBufferDescriptor,
+    BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
+    TxBufferDescriptor,
 };
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
 use core::{mem, slice};
 use cortex_m::{asm, interrupt};
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
+use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
+use led::rgb::{self, Color};
+use led::LED;
 use smoltcp::{self, phy, time, Error};
 
 pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
@@ -375,52 +376,50 @@ impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
 pub fn isr() {
     interrupt::free(|_| {
         let eth = unsafe { &(*efm32gg11b820::ETH::ptr()) };
-        let gpio = unsafe { &(*efm32gg11b820::GPIO::ptr()) };
         let int = eth.ifcr.read();
+        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
+            (unsafe { &*efm32gg11b820::CMU::ptr() })
+                .constrain()
+                .split()
+                .gpio,
+        );
+        let mut led0 = rgb::CommonAnodeLED::new(
+            gpio.ph10.as_output(),
+            gpio.ph11.as_output(),
+            gpio.ph12.as_output(),
+        );
+        let mut led1 = rgb::CommonAnodeLED::new(
+            gpio.ph13.as_output(),
+            gpio.ph14.as_output(),
+            gpio.ph15.as_output(),
+        );
 
         if int.mngmntdone().bit_is_set() {
             eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
         }
         if int.rxcmplt().bit_is_set() {
             eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
-            gpio.ph_dout.modify(|read, write| unsafe {
-                write
-                    .dout()
-                    .bits((read.dout().bits() & !(0x07 << 13)) | (0x05 << 13))
-            });
+            led1.set(Color::Green);
         }
         if int.rxoverrun().bit_is_set() {
             eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
-            gpio.ph_dout.modify(|read, write| unsafe {
-                write
-                    .dout()
-                    .bits((read.dout().bits() & !(0x07 << 13)) | (0x04 << 13))
-            })
+            led1.set(Color::Yellow);
         }
         if int.txcmplt().bit_is_set() {
             eth.ifcr.write(|reg| reg.txcmplt().set_bit());
-            gpio.ph_dout.modify(|read, write| unsafe {
-                write.dout().bits(read.dout().bits() | (0x07 << 10))
-            });
+            led0.set(Color::Black);
         }
         if int.txunderrun().bit_is_set() {
             eth.ifcr.write(|reg| reg.txunderrun().set_bit());
-            gpio.ph_dout.modify(|read, write| unsafe {
-                write
-                    .dout()
-                    .bits((read.dout().bits() & !(0x07 << 10)) | (0x04 << 10))
-            })
+            led0.set(Color::Yellow);
         }
 
         let int = eth.ifcr.read();
         if int.bits() != 0 {
             log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
             eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
-            gpio.ph_dout.modify(|read, write| unsafe {
-                write
-                    .dout()
-                    .bits((read.dout().bits() & !(0x3F << 10)) | (0x3E << 10))
-            })
+            led0.set(Color::Cyan);
+            led1.set(Color::Cyan);
         }
     });
 }
@@ -510,11 +509,18 @@ impl<'a> phy::RxToken for RxToken<'a> {
             dest += 1;
         }
 
-        unsafe {
-            (*efm32gg11b820::GPIO::ptr())
-                .ph_dout
-                .modify(|read, write| write.dout().bits(read.dout().bits() | (0x07 << 13)));
-        };
+        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
+            (unsafe { &*efm32gg11b820::CMU::ptr() })
+                .constrain()
+                .split()
+                .gpio,
+        );
+        let mut led1 = rgb::CommonAnodeLED::new(
+            gpio.ph13.as_output(),
+            gpio.ph14.as_output(),
+            gpio.ph15.as_output(),
+        );
+        led1.set(Color::Black);
 
         f(&mut data)
     }
@@ -560,13 +566,18 @@ impl<'a> phy::TxToken for TxToken<'a> {
                 .modify(|_, reg| reg.txstrt().set_bit());
         }
 
-        unsafe {
-            (*efm32gg11b820::GPIO::ptr()).ph_dout.modify(|read, write| {
-                write
-                    .dout()
-                    .bits((read.dout().bits() & !(0x07 << 10)) | (0x05 << 10))
-            });
-        }
+        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
+            (unsafe { &*efm32gg11b820::CMU::ptr() })
+                .constrain()
+                .split()
+                .gpio,
+        );
+        let mut led0 = rgb::CommonAnodeLED::new(
+            gpio.ph10.as_output(),
+            gpio.ph11.as_output(),
+            gpio.ph12.as_output(),
+        );
+        led0.set(Color::Green);
 
         Ok(result)
     }

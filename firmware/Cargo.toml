@@ -19,6 +19,18 @@ optional = true
 version = "*"
 features = [ "rt" ]
 
+[dependencies.efm32gg-hal]
+git = "https://github.com/crawford/efm32gg-hal"
+branch = "efm32gg11b820"
+version = "*"
+features = [ "chip-efm32gg11b820" ]
+
+[dependencies.embedded-hal]
+version = "*"
+
+[dependencies.led]
+version = "*"
+
 [dependencies.log]
 version = "*"
 
