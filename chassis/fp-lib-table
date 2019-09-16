@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name chassis)(type KiCad)(uri ${KIPRJMOD}/chassis.pretty)(options "")(descr ""))
+)
