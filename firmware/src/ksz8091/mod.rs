@@ -26,7 +26,7 @@ impl KSZ8091 {
 }
 
 impl PHY for KSZ8091 {
-    fn oui(&self, mac: &MAC) -> OUI {
+    fn oui(&self, mac: &dyn MAC) -> OUI {
         // Bits [2:17] of the OUI are in bits [15:0] of PHY ID 1.
         // Bits [18:23] of the OUI are in bits [15:10] of PHY ID 2.
         // Concatenating these two gives the OUI in bit-reverse order
@@ -39,11 +39,11 @@ impl PHY for KSZ8091 {
         OUI([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
     }
 
-    fn link_state(&self, _mac: &MAC) -> LinkState {
+    fn link_state(&self, _mac: &dyn MAC) -> LinkState {
         unimplemented!()
     }
 
-    fn set_link_state(&mut self, _mac: &MAC, _state: LinkState) {
+    fn set_link_state(&mut self, _mac: &dyn MAC, _state: LinkState) {
         unimplemented!()
     }
 }
