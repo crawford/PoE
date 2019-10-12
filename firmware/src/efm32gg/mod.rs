@@ -40,13 +40,12 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
         eth: &'a ETH,
         cmu: &CMU,
         gpio: &GPIO,
-        nvic: &mut NVIC,
         new_phy: F,
     ) -> Result<EFM32GG<'a, 'b, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio, nvic);
+        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio);
 
         // XXX: Wait for the PHY
         for _ in 0..1000 {
@@ -75,7 +74,6 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         eth: &'a ETH,
         cmu: &CMU,
         gpio: &GPIO,
-        nvic: &mut NVIC,
     ) -> MAC<'a, 'b> {
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
@@ -170,7 +168,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             .write(|reg| unsafe { reg.addr().bits(0x00_00_02_00) });
 
         // Clear pending interrupts
-        efm32gg11b820::NVIC::unpend(Interrupt::ETH);
+        NVIC::unpend(Interrupt::ETH);
         eth.ifcr.write(|reg| {
             reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
@@ -230,7 +228,9 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             reg.tsutimercomp().set_bit();
             reg
         });
-        nvic.enable(Interrupt::ETH);
+        unsafe {
+            NVIC::unmask(Interrupt::ETH);
+        }
 
         // Enable transmitting/receiving and the management interface
         eth.networkctrl.write(|reg| {

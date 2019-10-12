@@ -47,7 +47,6 @@ fn main() -> ! {
     let eth = peripherals.ETH;
     let gpio = peripherals.GPIO;
     let msc = peripherals.MSC;
-    let mut nvic = efm32gg11b820::CorePeripherals::take().unwrap().NVIC;
     let rtc = peripherals.RTC;
 
     // Enable the HFXO
@@ -116,7 +115,6 @@ fn main() -> ! {
             &eth,
             &cmu,
             &gpio,
-            &mut nvic,
             KSZ8091::new,
         )
         .expect("unable to create MACPHY"),
