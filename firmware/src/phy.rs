@@ -18,9 +18,9 @@ use crate::mac::MAC;
 use core::fmt;
 
 pub trait PHY {
-    fn oui(&self, mac: &MAC) -> OUI;
-    fn link_state(&self, mac: &MAC) -> LinkState;
-    fn set_link_state(&mut self, mac: &MAC, state: LinkState);
+    fn oui(&self, mac: &dyn MAC) -> OUI;
+    fn link_state(&self, mac: &dyn MAC) -> LinkState;
+    fn set_link_state(&mut self, mac: &dyn MAC, state: LinkState);
 }
 
 pub struct LinkState {

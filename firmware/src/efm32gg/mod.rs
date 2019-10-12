@@ -37,7 +37,7 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
     pub fn create<F>(
         rx_buffer: &'a mut RxBuffer<'b>,
         tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a ETH,
+        eth: &'a mut ETH,
         cmu: &CMU,
         gpio: &GPIO,
         nvic: &mut NVIC,
@@ -63,7 +63,7 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
 struct MAC<'a, 'b: 'a> {
     rx_buffer: &'a mut RxBuffer<'b>,
     tx_buffer: &'a mut TxBuffer<'b>,
-    eth: &'a ETH,
+    eth: &'a mut ETH,
 }
 
 impl<'a, 'b: 'a> MAC<'a, 'b> {
@@ -72,7 +72,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
     fn create(
         rx_buffer: &'a mut RxBuffer<'b>,
         tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a ETH,
+        eth: &'a mut ETH,
         cmu: &CMU,
         gpio: &GPIO,
         nvic: &mut NVIC,
@@ -230,7 +230,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             reg.tsutimercomp().set_bit();
             reg
         });
-        nvic.enable(Interrupt::ETH);
+        NVIC::unmask(Interrupt::ETH);
 
         // Enable transmitting/receiving and the management interface
         eth.networkctrl.write(|reg| {

@@ -28,6 +28,9 @@ features = [ "chip-efm32gg11b820" ]
 [dependencies.embedded-hal]
 version = "*"
 
+[dependencies.cortex-m-rtfm]
+git = "https://github.com/rtfm-rs/cortex-m-rtfm"
+
 [dependencies.led]
 version = "*"
 
@@ -37,7 +40,7 @@ version = "*"
 [dependencies.smoltcp]
 git = "https://github.com/m-labs/smoltcp"
 default-features = false
-features = [ "proto-ipv4", "socket-tcp"  ]
+features = [ "ethernet", "proto-ipv4", "socket-tcp"  ]
 
 [profile.dev]
 incremental = false
