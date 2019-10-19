@@ -32,9 +32,9 @@ use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
 use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
-use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
+use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, SocketSet, TcpSocket, TcpSocketBuffer};
+use smoltcp::time::{Duration, Instant};
+use smoltcp::wire::{EthernetAddress, IpCidr, Ipv4Address, Ipv4Cidr};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -116,7 +116,7 @@ fn main() -> ! {
 
     let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
     let mut neighbor_cache = [None; 8];
-    let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 1, 0, 3), 24)];
+    let mut ip_addrs = [IpCidr::new(Ipv4Address::UNSPECIFIED.into(), 0)];
 
     let mut rx_region = dma::RxRegion([0; 1536]);
     let mut tx_region = dma::TxRegion([0; 1536]);
@@ -146,20 +146,56 @@ fn main() -> ! {
         TcpSocketBuffer::new(tcp_tx_payload.as_mut()),
     );
 
-    let mut socket_array = [None];
+    let mut dhcp_socket = Dhcpv4Socket::new();
+    // XXX: just for testing
+    dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(10)));
+
+    let mut socket_array = [None, None];
     let mut sockets = SocketSet::new(socket_array.as_mut());
     let tcp_handle = sockets.add(tcp_socket);
+    let dhcp_handle = sockets.add(dhcp_socket);
 
     loop {
         log::trace!("WFE");
         asm::wfe();
 
         let timestamp = Instant::from_millis(rtc.cnt.read().cnt().bits());
-        match iface.poll(&mut sockets, timestamp) {
-            Ok(_) => {}
-            Err(err) => log::error!("Failed to poll: {}", err),
+        if let Err(err) = iface.poll(&mut sockets, timestamp) {
+            log::error!("Failed to poll: {}", err)
         }
 
+        {
+            match sockets.get::<Dhcpv4Socket>(dhcp_handle).poll() {
+                None => {}
+                Some(Dhcpv4Event::Configured(config)) => {
+                    log::debug!("DHCP config acquired!");
+
+                    log::debug!("IP address:      {}", config.address);
+                    iface.update_ip_addrs(|addrs| addrs[0] = IpCidr::Ipv4(config.address));
+
+                    if let Some(router) = config.router {
+                        log::debug!("Default gateway: {}", router);
+                        iface.routes_mut().add_default_ipv4_route(router).unwrap();
+                    } else {
+                        log::debug!("Default gateway: None");
+                        iface.routes_mut().remove_default_ipv4_route();
+                    }
+
+                    for (i, s) in config.dns_servers.iter().enumerate() {
+                        if let Some(s) = s {
+                            log::debug!("DNS server {}:    {}", i, s);
+                        }
+                    }
+                }
+                Some(Dhcpv4Event::Deconfigured) => {
+                    log::debug!("DHCP lost config!");
+                    iface.update_ip_addrs(|addrs| {
+                        addrs[0] = IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))
+                    });
+                    iface.routes_mut().remove_default_ipv4_route();
+                }
+            }
+        }
         {
             let mut socket = sockets.get::<TcpSocket>(tcp_handle);
             if !socket.is_open() {
