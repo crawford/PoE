@@ -48,9 +48,9 @@ mod app {
     use ignore_result::Ignore;
     use led::rgb::{self, Color};
     use led::LED;
-    use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, SocketStorage};
-    use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-    use smoltcp::time::Instant;
+    use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
+    use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
+    use smoltcp::time::{Duration, Instant};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
 
     #[monotonic(binds = SysTick, default = true)]
@@ -84,11 +84,10 @@ mod app {
              tcp_tx_payload: [u8; 128] = [0; 128],
 
              neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 1] = [SocketStorage::EMPTY; 1],
-             ip_addresses: [IpCidr; 1] = [IpCidr::Ipv4(Ipv4Cidr::new(
-                Ipv4Address::new(192, 168, 0, 3),
-                24,
-            ))],
+             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
+             ip_addresses: [IpCidr; 1] =
+                [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
+            routes: [Option<(IpCidr, Route)>; 1] = [None; 1],
         ]
     )]
     fn init(mut cx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
@@ -219,6 +218,7 @@ mod app {
         .hardware_addr(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]).into())
         .neighbor_cache(NeighborCache::new(cx.local.neighbors.as_mut()))
         .ip_addrs(cx.local.ip_addresses.as_mut())
+        .routes(Routes::new(cx.local.routes.as_mut()))
         .random_seed(seed)
         .finalize();
 
@@ -226,6 +226,11 @@ mod app {
             TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
+
+        let mut dhcp_socket = Dhcpv4Socket::new();
+        // XXX: just for testing
+        dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(60)));
+        let dhcp_handle = interface.add_socket(dhcp_socket);
 
         handle_network::spawn().unwrap();
 
@@ -237,6 +242,7 @@ mod app {
                 network: network::Resources {
                     interface,
                     tcp_handle,
+                    dhcp_handle,
                 },
                 rtc: cx.device.RTC,
             },
