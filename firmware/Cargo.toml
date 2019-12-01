@@ -4,45 +4,16 @@ version = "0.1.0-dev"
 authors = ["Alex Crawford <poe@accounts.acrawford.com>"]
 edition = "2018"
 
-[dependencies.cortex-m]
-version = "*"
-
-[dependencies.cortex-m-rt]
-version = "*"
-features = [ "device" ]
-
-[dependencies.cortex-m-semihosting]
-version = "*"
-optional = true
-
-[dependencies.efm32gg11b820]
-version = "*"
-features = [ "rt" ]
-
-[dependencies.efm32gg-hal]
-git = "https://github.com/crawford/efm32gg-hal"
-branch = "efm32gg11b820"
-version = "*"
-features = [ "chip-efm32gg11b820" ]
-
-[dependencies.embedded-hal]
-version = "*"
-
-[dependencies.led]
-version = "*"
-
-[dependencies.log]
-version = "*"
-
-[dependencies.smoltcp]
-git = "https://github.com/m-labs/smoltcp"
-default-features = false
-features = [ "ethernet", "proto-ipv4", "socket-tcp"  ]
-
-[profile.dev]
-incremental = false
-opt-level = 3
-lto = true
+[dependencies]
+cortex-m = "*"
+cortex-m-rt = { version = "*", features = [ "device" ] }
+cortex-m-semihosting = { version = "*", optional = true }
+efm32gg11b820 = { version = "*", features = [ "rt" ] }
+efm32gg-hal = { git = "https://github.com/crawford/efm32gg-hal", branch = "efm32gg11b820", features = [ "chip-efm32gg11b820" ] }
+embedded-hal = "*"
+led = "*"
+log = "*"
+smoltcp = { git = "https://github.com/m-labs/smoltcp", default-features = false, features = [ "ethernet", "proto-dhcpv4", "socket-tcp" ] }
 
 [profile.release]
 lto = true
