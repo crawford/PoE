@@ -107,17 +107,17 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 10)) });
 
         // Configure the RMII GPIOs
-        gpio.pf_model.write(|reg| {
+        gpio.pf_model.modify(|_, reg| {
             reg.mode6().pushpull(); // TXD1
             reg.mode7().pushpull(); // TXD0
             reg
         });
-        gpio.pf_modeh.write(|reg| {
+        gpio.pf_modeh.modify(|_, reg| {
             reg.mode8().pushpull(); // TX_EN
             reg.mode9().input(); // RXD1
             reg
         });
-        gpio.pd_modeh.write(|reg| {
+        gpio.pd_modeh.modify(|_, reg| {
             reg.mode9().input(); // RXD0
             reg.mode10().pushpull(); // REFCLK
             reg.mode11().input(); // CRS_DV

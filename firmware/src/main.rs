@@ -19,14 +19,15 @@ mod efm32gg;
 mod ksz8091;
 mod mac;
 mod phy;
-#[cfg(feature = "logging")]
-mod semihosting;
 
 use crate::efm32gg::dma;
 use crate::ksz8091::KSZ8091;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use cortex_m::{asm, peripheral};
+use cortex_m_log::destination::Itm;
+use cortex_m_log::log::Logger;
+use cortex_m_log::printer::itm::InterruptSync;
 use efm32gg11b820::interrupt;
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
@@ -37,11 +38,11 @@ use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
-#[cfg(feature = "logging")]
-static LOGGER: semihosting::Logger = semihosting::Logger;
-
 #[cortex_m_rt::entry]
 fn main() -> ! {
+    let core_peripherals = cortex_m::peripheral::Peripherals::take().unwrap();
+    let itm = core_peripherals.ITM;
+
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
     let eth = peripherals.ETH;
@@ -63,8 +64,11 @@ fn main() -> ! {
     // Set the appropriate read delay for flash
     msc.readctrl.write(|reg| reg.mode().ws2());
 
-    // Switch to selected oscillator
+    // Switch to high frequency oscillator
     cmu.hfclksel.write(|reg| reg.hf().hfxo());
+
+    // Use the high frequency clock for the ITM
+    cmu.dbgclksel.write(|reg| reg.dbg().hfclk());
 
     // Update the EMU configuration
     let _ = cmu.status.read().bits();
@@ -93,11 +97,16 @@ fn main() -> ! {
         reg
     });
 
-    #[cfg(feature = "logging")]
-    {
-        log::set_logger(&LOGGER).unwrap();
-        log::set_max_level(log::LevelFilter::Warn);
-    }
+    gpio.routepen.write(|reg| reg.swvpen().set_bit());
+    gpio.routeloc0.write(|reg| reg.swvloc().loc0());
+    gpio.pf_model.write(|reg| reg.mode2().pushpull());
+
+    let logger = Logger::<InterruptSync> {
+        inner: InterruptSync::new(Itm::new(itm)),
+        level: log::LevelFilter::Trace,
+    };
+    unsafe { cortex_m_log::log::trick_init(&logger) }.unwrap();
+    log::debug!("Logger online!");
 
     let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
     let mut neighbor_cache = [None; 8];
@@ -136,6 +145,7 @@ fn main() -> ! {
     let tcp_handle = sockets.add(tcp_socket);
 
     loop {
+        log::trace!("WFE");
         asm::wfe();
 
         let timestamp = Instant::from_millis(rtc.cnt.read().cnt().bits());

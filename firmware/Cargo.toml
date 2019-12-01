@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 cortex-m = "*"
 cortex-m-rt = { version = "*", features = [ "device" ] }
-cortex-m-semihosting = { version = "*", optional = true }
+cortex-m-log = { version = "*", optional = true }
 efm32gg11b820 = { version = "*", features = [ "rt" ] }
 efm32gg-hal = { git = "https://github.com/crawford/efm32gg-hal", branch = "efm32gg11b820", features = [ "chip-efm32gg11b820" ] }
 embedded-hal = "*"
@@ -19,4 +19,4 @@ smoltcp = { git = "https://github.com/m-labs/smoltcp", default-features = false,
 lto = true
 
 [features]
-logging = [ "cortex-m-semihosting", "smoltcp/log" ]
+logging = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
