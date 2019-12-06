@@ -1,4 +1,5 @@
 target/**
+itm.fifo
 *.rs.bk
 *.swo
 *.swp
