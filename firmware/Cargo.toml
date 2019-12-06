@@ -13,6 +13,7 @@ efm32gg-hal = { git = "https://github.com/crawford/efm32gg-hal", branch = "efm32
 embedded-hal = "*"
 led = "*"
 log = "*"
+panic-itm = "0.4.1"
 smoltcp = { git = "https://github.com/m-labs/smoltcp", default-features = false, features = [ "ethernet", "proto-dhcpv4", "socket-tcp" ] }
 
 [profile.release]

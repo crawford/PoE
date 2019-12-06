@@ -15,6 +15,8 @@
 #![no_main]
 #![no_std]
 
+extern crate panic_itm;
+
 mod efm32gg;
 mod ksz8091;
 mod mac;
@@ -23,11 +25,7 @@ mod phy;
 use crate::efm32gg::dma;
 use crate::ksz8091::KSZ8091;
 use core::fmt::Write;
-use core::panic::PanicInfo;
 use cortex_m::{asm, peripheral};
-use cortex_m_log::destination::Itm;
-use cortex_m_log::log::Logger;
-use cortex_m_log::printer::itm::InterruptSync;
 use efm32gg11b820::interrupt;
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
@@ -40,9 +38,6 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
-    let core_peripherals = cortex_m::peripheral::Peripherals::take().unwrap();
-    let itm = core_peripherals.ITM;
-
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
     let eth = peripherals.ETH;
@@ -101,12 +96,23 @@ fn main() -> ! {
     gpio.routeloc0.write(|reg| reg.swvloc().loc0());
     gpio.pf_model.write(|reg| reg.mode2().pushpull());
 
-    let logger = Logger::<InterruptSync> {
-        inner: InterruptSync::new(Itm::new(itm)),
-        level: log::LevelFilter::Trace,
+    #[cfg(feature = "logging")]
+    let _logger = {
+        use cortex_m_log::destination::Itm;
+        use cortex_m_log::log::Logger;
+        use cortex_m_log::printer::itm::InterruptSync;
+
+        let itm = cortex_m::peripheral::Peripherals::take().unwrap().ITM;
+
+        let logger = Logger::<InterruptSync> {
+            inner: InterruptSync::new(Itm::new(itm)),
+            level: log::LevelFilter::Trace,
+        };
+        unsafe { cortex_m_log::log::trick_init(&logger) }.unwrap();
+        log::debug!("Logger online!");
+
+        logger
     };
-    unsafe { cortex_m_log::log::trick_init(&logger) }.unwrap();
-    log::debug!("Logger online!");
 
     let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
     let mut neighbor_cache = [None; 8];
@@ -173,39 +179,6 @@ fn main() -> ! {
 #[efm32gg11b820::interrupt]
 fn ETH() {
     efm32gg::isr()
-}
-
-// Light up both LEDs yellow, trigger a breakpoint, and loop
-#[panic_handler]
-pub fn panic(_info: &PanicInfo) -> ! {
-    cortex_m::interrupt::disable();
-
-    let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-        (unsafe { &*efm32gg11b820::CMU::ptr() })
-            .constrain()
-            .split()
-            .gpio,
-    );
-    let mut led0 = rgb::CommonAnodeLED::new(
-        gpio.ph10.as_output(),
-        gpio.ph11.as_output(),
-        gpio.ph12.as_output(),
-    );
-    let mut led1 = rgb::CommonAnodeLED::new(
-        gpio.ph13.as_output(),
-        gpio.ph14.as_output(),
-        gpio.ph15.as_output(),
-    );
-
-    led0.set(Color::Yellow);
-    led1.set(Color::Yellow);
-
-    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
-        asm::bkpt();
-    }
-    loop {
-        asm::wfe();
-    }
 }
 
 // Light up both LEDs red, trigger a breakpoint, and loop
