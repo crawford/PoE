@@ -106,7 +106,7 @@ fn main() -> ! {
 
         let logger = Logger::<InterruptSync> {
             inner: InterruptSync::new(Itm::new(itm)),
-            level: log::LevelFilter::Trace,
+            level: log::LevelFilter::Debug,
         };
         unsafe { cortex_m_log::log::trick_init(&logger) }.unwrap();
         log::debug!("Logger online!");
@@ -156,8 +156,9 @@ fn main() -> ! {
     let dhcp_handle = sockets.add(dhcp_socket);
 
     loop {
-        log::trace!("WFE");
+        log::trace!("WFE...");
         asm::wfe();
+        log::trace!("Exiting WFE");
 
         let timestamp = Instant::from_millis(rtc.cnt.read().cnt().bits());
         if let Err(err) = iface.poll(&mut sockets, timestamp) {

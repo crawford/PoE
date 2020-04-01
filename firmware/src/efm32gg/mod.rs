@@ -313,7 +313,10 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
                 }
             }
 
-            start?
+            start.or_else(|| {
+                log::debug!("find_tx_window: no start");
+                None
+            })?
         };
 
         // Reclaim the descriptors of the previously-used transmit window. Unfortunately, the
@@ -336,6 +339,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             }
         }
 
+        log::debug!("find_tx_window: start: {}  len: {}", start, len);
         Some((start, len))
     }
 }
@@ -407,6 +411,7 @@ pub fn isr() {
         if int.rxoverrun().bit_is_set() {
             eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
             led1.set(Color::Yellow);
+            log::error!("RX Overrun Interrupt");
         }
         if int.txcmplt().bit_is_set() {
             eth.ifcr.write(|reg| reg.txcmplt().set_bit());
@@ -415,11 +420,18 @@ pub fn isr() {
         if int.txunderrun().bit_is_set() {
             eth.ifcr.write(|reg| reg.txunderrun().set_bit());
             led0.set(Color::Yellow);
+            log::error!("TX Underrun Interrupt");
+        }
+        if int.ambaerr().bit_is_set() {
+            eth.ifcr.write(|reg| reg.ambaerr().set_bit());
+            led0.set(Color::Yellow);
+            log::error!("TX AMBA Error Interrupt");
         }
 
         let int = eth.ifcr.read();
         if int.bits() != 0 {
             log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
+
             eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
             led0.set(Color::Cyan);
             led1.set(Color::Cyan);
@@ -531,6 +543,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
         if len > (self.len * 128) {
+            log::debug!("Exhausted: len: {}  token.len: {}", len, self.len * 128);
             return Err(Error::Exhausted);
         }
 
@@ -540,18 +553,24 @@ impl<'a> phy::TxToken for TxToken<'a> {
         let mut data = [0; 1536];
         let result = f(&mut data[0..len])?;
 
+        log::debug!("Writing buffer...");
         for i in 0..=last_buffer {
+            log::debug!("  Descriptor {}", i);
             let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
             unsafe { slice::from_raw_parts_mut(d.address() as *mut u8, 128) }
                 .copy_from_slice(&data[(i * 128)..][..128]);
             if i == 0 {
+                log::debug!("    Length {}", len);
                 d.set_length(len);
             }
             if i == last_buffer {
+                log::debug!("    Last buffer");
                 d.set_last_buffer(true);
             }
             d.release();
+            log::debug!("    {:?}", d);
         }
+        log::debug!("Writing buffer...done");
 
         unsafe {
             (*efm32gg11b820::ETH::ptr())
