@@ -313,10 +313,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
                 }
             }
 
-            match start {
-                Some(idx) => idx,
-                None => return None,
-            }
+            start?
         };
 
         // Reclaim the descriptors of the previously-used transmit window. Unfortunately, the
@@ -445,15 +442,8 @@ impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let (rx_start, rx_end) = match self.mac.find_rx_window() {
-            Some((start, end)) => (start, end),
-            None => return None,
-        };
-
-        let (tx_start, tx_len) = match self.mac.find_tx_window() {
-            Some((start, len)) => (start, len),
-            None => return None,
-        };
+        let (rx_start, rx_end) = self.mac.find_rx_window()?;
+        let (tx_start, tx_len) = self.mac.find_tx_window()?;
 
         Some((
             RxToken {
@@ -470,10 +460,7 @@ impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let (start, len) = match self.mac.find_tx_window() {
-            Some((start, len)) => (start, len),
-            None => return None,
-        };
+        let (start, len) = self.mac.find_tx_window()?;
 
         Some(TxToken {
             descriptors: self.mac.tx_buffer.descriptors_mut(),
