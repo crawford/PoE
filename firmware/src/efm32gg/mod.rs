@@ -428,14 +428,19 @@ pub fn isr() {
             log::error!("TX AMBA Error Interrupt");
         }
 
-        let int = eth.ifcr.read();
-        if int.bits() != 0 {
-            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
+        // XXX: Read from ifcr seems to be racy. I'm guessing its because that register can change
+        // values even if interrupts are disabled. I saw the following in a test run, which
+        // shouldn't be possible (0x02 is RXCMPLT):
+        //
+        //   Unhandled interrupt (ETH): 0x2
+        // let int = eth.ifcr.read();
+        // if int.bits() != 0 {
+        //     log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
 
-            eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
-            led0.set(Color::Cyan);
-            led1.set(Color::Cyan);
-        }
+        //     eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
+        //     led0.set(Color::Cyan);
+        //     led1.set(Color::Cyan);
+        // }
     });
 }
 
