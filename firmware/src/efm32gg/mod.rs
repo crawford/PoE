@@ -288,8 +288,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         }
     }
 
-    fn find_tx_window(&self) -> Option<(usize, usize)> {
-        let descriptors = self.tx_buffer.descriptors();
+    fn find_tx_window(&mut self) -> Option<(usize, usize)> {
         let queue_ptr = (unsafe {
             (*efm32gg11b820::ETH::ptr())
                 .txqptr
@@ -299,6 +298,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
                 << 2
         } - self.tx_buffer.address() as u32) as usize
             / mem::size_of::<TxBufferDescriptor>();
+        let descriptors = self.tx_buffer.descriptors_mut();
 
         // Walk forward from the queue pointer (wrapping around to the beginning of the buffer if
         // necessary), looking for the first unused descriptor. This will be the start of the
@@ -318,6 +318,12 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
                 None => return None,
             }
         };
+
+        // Reclaim the descriptors of the previously-used transmit window. Unfortunately, the
+        // hardware only clears the ownership flag on the first descriptor for a frame.
+        for i in 1..((descriptors[start].length() + 127) / 128) {
+            descriptors[(start + i) % descriptors.len()].claim()
+        }
 
         // Walk forward from the start of the transmit window (wrapping around to the beginning of
         // the buffer if necessary), looking for the last unused descriptor. This will be the end

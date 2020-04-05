@@ -263,8 +263,10 @@ impl BufferDescriptor for TxBufferDescriptor {
     }
 
     fn release(&mut self) {
-        // XXX: Improve this
-        self.status = UnsafeCell::new(unsafe { *self.status.get() } & !0x8000_0000);
+        self.status = UnsafeCell::new(
+            unsafe { *self.status.get() }
+                & !Self::ownership_to_word(BufferDescriptorOwnership::Software),
+        );
     }
 
     fn wrapping(&self) -> BufferDescriptorListWrap {
@@ -273,15 +275,27 @@ impl BufferDescriptor for TxBufferDescriptor {
 }
 
 impl TxBufferDescriptor {
+    pub fn length(&self) -> usize {
+        ((unsafe { *self.status.get() }) & 0x0000_3FFF) as usize
+    }
+
     pub fn set_length(&mut self, length: usize) {
-        self.status =
-            UnsafeCell::new((unsafe { *self.status.get() } & !0x0000_3FFF) | length as u32);
+        self.status = UnsafeCell::new(
+            (unsafe { *self.status.get() } & !0x0000_3FFF) | (length as u32 & 0x0000_3FFF),
+        );
     }
 
     pub fn set_last_buffer(&mut self, last: bool) {
         self.status = UnsafeCell::new(
             (unsafe { *self.status.get() } & !0x0000_8000)
                 | if last { 0x0000_8000 } else { 0x0000_0000 },
+        );
+    }
+
+    pub fn claim(&mut self) {
+        self.status = UnsafeCell::new(
+            unsafe { *self.status.get() }
+                | Self::ownership_to_word(BufferDescriptorOwnership::Software),
         );
     }
 
