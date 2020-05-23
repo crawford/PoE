@@ -5,16 +5,16 @@ authors = ["Alex Crawford <poe@accounts.acrawford.com>"]
 edition = "2018"
 
 [dependencies]
-cortex-m = "*"
-cortex-m-rt = { version = "*", features = [ "device" ] }
-cortex-m-log = { version = "*", optional = true }
-efm32gg11b820 = { version = "*", features = [ "rt" ] }
+cortex-m = "0.6.2"
+cortex-m-rt = { version = "0.6.12", features = [ "device" ] }
+cortex-m-log = { version = "0.6.1", optional = true }
+efm32gg11b820 = { version = "0.7.0", features = [ "rt" ] }
 efm32gg-hal = { git = "https://github.com/crawford/efm32gg-hal", branch = "efm32gg11b820", features = [ "chip-efm32gg11b820" ] }
-embedded-hal = "*"
-led = "*"
-log = "*"
+embedded-hal = "0.2.3"
+led = "0.2.0"
+log = "0.4.8"
 panic-itm = "0.4.1"
-smoltcp = { git = "https://github.com/m-labs/smoltcp", default-features = false, features = [ "ethernet", "proto-dhcpv4", "socket-tcp" ] }
+smoltcp = { version = "0.6.0", default-features = false, features = [ "ethernet", "proto-dhcpv4", "socket-tcp" ] }
 
 [profile.release]
 lto = true
