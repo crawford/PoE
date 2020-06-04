@@ -14,6 +14,7 @@
 
 use core::cell::UnsafeCell;
 use core::fmt;
+use core::ptr::NonNull;
 
 #[repr(align(4))]
 pub struct RxRegion(pub [u8; 1536]);
@@ -33,6 +34,7 @@ pub enum BufferDescriptorListWrap {
 }
 
 pub trait BufferDescriptor {
+    fn dangling() -> Self;
     fn new(address: *mut u8) -> Self;
     fn end_of_list(self) -> Self;
     fn address(&self) -> u32;
@@ -41,30 +43,37 @@ pub trait BufferDescriptor {
     fn wrapping(&self) -> BufferDescriptorListWrap;
 }
 
-pub struct RxBuffer<'a> {
-    data: UnsafeCell<&'a mut [u8; 128 * 12]>,
+pub struct RxBuffer {
+    data: UnsafeCell<[u8; 128 * 12]>,
     descriptor_list: [RxBufferDescriptor; 12],
 }
 
-impl<'a> RxBuffer<'a> {
-    pub fn new(data: &'a mut RxRegion) -> RxBuffer<'a> {
-        RxBuffer {
+impl RxBuffer {
+    pub fn new() -> RxBuffer {
+        let mut buffer = TxBuffer {
+            data: UnsafeCell::new([0; 1536]),
             descriptor_list: [
-                RxBufferDescriptor::new(&mut data.0[0] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 2] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 3] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 4] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 5] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 6] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 7] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 8] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 9] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 10] as *mut u8),
-                RxBufferDescriptor::new(&mut data.0[128 * 11] as *mut u8).end_of_list(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
             ],
-            data: UnsafeCell::new(&mut data.0),
+        };
+
+        for (i, descriptor) in buffer.descriptor_list.enumerate() {
+            descriptor.address = &mut buffer.data.0[128 * i] as *mut u8
         }
+        (buffer.descriptor_list.last().unwrap()).end_of_list();
+
+        buffer
     }
 
     pub fn descriptors(&self) -> &[RxBufferDescriptor] {
@@ -99,6 +108,10 @@ impl fmt::Debug for RxBufferDescriptor {
 }
 
 impl BufferDescriptor for RxBufferDescriptor {
+    fn dangling() -> RxBufferDescriptor {
+        todo!();
+    }
+
     fn new(address: *mut u8) -> RxBufferDescriptor {
         debug_assert!((address as u32).trailing_zeros() >= 2);
 
@@ -179,30 +192,37 @@ impl RxBufferDescriptor {
     }
 }
 
-pub struct TxBuffer<'a> {
-    data: UnsafeCell<&'a mut [u8; 128 * 12]>,
+pub struct TxBuffer {
+    data: UnsafeCell<[u8; 128 * 12]>,
     descriptor_list: [TxBufferDescriptor; 12],
 }
 
-impl<'a> TxBuffer<'a> {
-    pub fn new(data: &'a mut TxRegion) -> TxBuffer<'a> {
-        TxBuffer {
+impl TxBuffer {
+    pub fn new() -> TxBuffer {
+        let mut buffer = TxBuffer {
+            data: UnsafeCell::new([0; 1536]),
             descriptor_list: [
-                TxBufferDescriptor::new(&mut data.0[0] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 2] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 3] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 4] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 5] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 6] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 7] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 8] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 9] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 10] as *mut u8),
-                TxBufferDescriptor::new(&mut data.0[128 * 11] as *mut u8).end_of_list(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
+                TxBufferDescriptor::dangling(),
             ],
-            data: UnsafeCell::new(&mut data.0),
+        };
+
+        for (i, descriptor) in buffer.descriptor_list.enumerate() {
+            descriptor.address = &mut buffer.data.0[128 * i] as *mut u8
         }
+        buffer.descriptor_list[11] = buffer.descriptor_list[11].end_of_list();
+
+        buffer
     }
 
     pub fn descriptors(&self) -> &[TxBufferDescriptor] {
@@ -236,6 +256,16 @@ impl fmt::Debug for TxBufferDescriptor {
 }
 
 impl BufferDescriptor for TxBufferDescriptor {
+    fn dangling() -> TxBufferDescriptor {
+        TxBufferDescriptor {
+            address: 0,
+            status: UnsafeCell::new(
+                TxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::NoWrap)
+                    | TxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Software),
+            ),
+        }
+    }
+
     fn new(address: *mut u8) -> TxBufferDescriptor {
         TxBufferDescriptor {
             address: address as u32,

@@ -18,6 +18,7 @@
 mod efm32gg;
 mod ksz8091;
 mod mac;
+mod network;
 mod phy;
 #[cfg(feature = "logging")]
 mod semihosting;
@@ -42,26 +43,19 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 static LOGGER: semihosting::Logger = semihosting::Logger;
 
 // TODO: Implement rtfm::Monotonic with RTC
-#[rtfm::app(device = efm32gg11b820, monotonic = rtfm::cyccnt::CYCCNT)]
+#[rtfm::app(device = efm32gg11b820, peripherals = true, monotonic = rtfm::cyccnt::CYCCNT)]
 const APP: () = {
     struct Resources {
+        network: network::Resources,
         peripherals: efm32gg11b820::Peripherals,
-        iface: EthernetInterface<'static, 'static, 'static, efm32gg::EFM32GG<'static, 'static, KSZ8091>>,
-        sockets: SocketSet<'static, 'static, 'static>,
-        tcp_handle: SocketHandle,
-        rx_region: dma::RxRegion,
-        tx_region: dma::TxRegion,
     }
 
     #[init(spawn = [poll_interface])]
     fn init(ctx: init::Context) -> init::LateResources {
-        let peripherals = efm32gg11b820::Peripherals::take().unwrap();
-        let cmu = peripherals.CMU;
-        let mut eth = peripherals.ETH;
-        let gpio = peripherals.GPIO;
-        let msc = peripherals.MSC;
-        let mut nvic = efm32gg11b820::CorePeripherals::take().unwrap().NVIC;
-        let rtc = peripherals.RTC;
+        let cmu = ctx.device.CMU;
+        let gpio = ctx.device.GPIO;
+        let msc = ctx.device.MSC;
+        let rtc = ctx.device.RTC;
 
         // Enable the HFXO
         cmu.oscencmd.write(|reg| reg.hfxoen().set_bit());
@@ -113,56 +107,68 @@ const APP: () = {
             log::set_max_level(log::LevelFilter::Warn);
         }
 
+        let network = network::ResourceBuilder::new(
+            dma::RxBuffer::new(dma::RxRegion()),
+            dma::TxBuffer::new(dma::TxRegion()),
+        );
+
         let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
         let mut neighbor_cache = [None; 8];
         let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 43, 128, 5), 24)];
 
-        let mut rx_region = dma::RxRegion([0; 1536]);
-        let mut tx_region = dma::TxRegion([0; 1536]);
-        let mut rx_buffer = dma::RxBuffer::new(&mut rx_region);
-        let mut tx_buffer = dma::TxBuffer::new(&mut tx_region);
-
-        let mut iface = EthernetInterfaceBuilder::new(
-            efm32gg::EFM32GG::create(
-                &mut rx_buffer,
-                &mut tx_buffer,
-                &mut eth,
-                &cmu,
-                &gpio,
-                &mut nvic,
-                KSZ8091::new,
+        let network = network.add_iface(
+            EthernetInterfaceBuilder::new(
+                efm32gg::EFM32GG::create(
+                    &mut network.rx_buffer,
+                    &mut network.tx_buffer,
+                    ctx.device.ETH,
+                    &cmu,
+                    &gpio,
+                    KSZ8091::new,
+                )
+                .expect("unable to create MACPHY"),
             )
-            .expect("unable to create MACPHY"),
-        )
-        .ethernet_addr(ethernet_addr)
-        .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
-        .ip_addrs(ip_addrs.as_mut())
-        .finalize();
+            .ethernet_addr(ethernet_addr)
+            .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
+            .ip_addrs(ip_addrs.as_mut())
+            .finalize(),
+        );
 
-        let mut tcp_rx_payload = [0; 128];
-        let mut tcp_tx_payload = [0; 128];
         let tcp_socket = TcpSocket::new(
-            TcpSocketBuffer::new(tcp_rx_payload.as_mut()),
-            TcpSocketBuffer::new(tcp_tx_payload.as_mut()),
+            TcpSocketBuffer::new(network.tcp_rx_payload.as_mut()),
+            TcpSocketBuffer::new(network.tcp_tx_payload.as_mut()),
         );
 
         let mut socket_array = [None];
-        let mut sockets = SocketSet::new(socket_array.as_mut());
-        let tcp_handle = sockets.add(tcp_socket);
+        network = network.add_sockets(SocketSet::new(socket_array.as_mut()));
+
+        let network = network.add_tcp_handle(network.sockets.add(tcp_socket));
 
         ctx.spawn.poll_interface().unwrap();
-        init::LateResources { peripherals, iface, sockets, tcp_handle, rx_region, tx_region }
+        init::LateResources {
+            peripherals: ctx.device,
+            network,
+        }
     }
 
-    #[task(schedule = [poll_interface], resources = [iface, peripherals, sockets, tcp_handle])]
+    #[task(schedule = [poll_interface], resources = [network, peripherals])]
     fn poll_interface(mut ctx: poll_interface::Context) {
         let now = Instant::from_millis(ctx.resources.peripherals.RTC.cnt.read().cnt().bits());
-        if let Err(err) = ctx.resources.iface.poll(&mut ctx.resources.sockets, now) {
+        if let Err(err) = ctx
+            .resources
+            .network
+            .iface
+            .poll(&mut ctx.resources.network.sockets, now)
+        {
             log::error!("Failed to poll: {}", err)
         };
 
         {
-            let mut socket = ctx.resources.sockets.get::<TcpSocket>(*ctx.resources.tcp_handle);
+            let mut socket = ctx
+                .resources
+                .network
+                .sockets
+                .get::<TcpSocket>(*ctx.resources.network.tcp_handle);
             if !socket.is_open() {
                 socket.listen(6969).unwrap();
             }
@@ -175,9 +181,21 @@ const APP: () = {
             }
         }
 
-        if let Some(delay) = ctx.resources.iface.poll_delay(&mut ctx.resources.sockets, now) {
+        if let Some(delay) = ctx
+            .resources
+            .network
+            .iface
+            .poll_delay(&mut ctx.resources.network.sockets, now)
+        {
             // TODO: Millis to cycles? There's got to be a cleaner way.
-            ctx.schedule.poll_interface(rtfm::cyccnt::Instant::now() + rtfm::cyccnt::Duration::from_cycles(delay.total_millis().try_into().unwrap())).unwrap()
+            ctx.schedule
+                .poll_interface(
+                    rtfm::cyccnt::Instant::now()
+                        + rtfm::cyccnt::Duration::from_cycles(
+                            delay.total_millis().try_into().unwrap(),
+                        ),
+                )
+                .unwrap()
         }
     }
 

@@ -22,31 +22,30 @@ use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
 use core::{mem, slice};
 use cortex_m::{asm, interrupt};
-use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
+use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO};
 use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
 use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::{self, phy, time, Error};
 
-pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
-    mac: MAC<'a, 'b>,
+pub struct EFM32GG<'a, P: PHY> {
+    mac: MAC<'a>,
     phy: P,
 }
 
-impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
+impl<'a, P: PHY> EFM32GG<'a, P> {
     pub fn create<F>(
-        rx_buffer: &'a mut RxBuffer<'b>,
-        tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a mut ETH,
+        rx_buffer: &'a mut RxBuffer,
+        tx_buffer: &'a mut TxBuffer,
+        eth: ETH,
         cmu: &CMU,
         gpio: &GPIO,
-        nvic: &mut NVIC,
         new_phy: F,
-    ) -> Result<EFM32GG<'a, 'b, P>, &'static str>
+    ) -> Result<EFM32GG<'a, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio, nvic);
+        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio);
 
         // XXX: Wait for the PHY
         for _ in 0..1000 {
@@ -60,23 +59,22 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
     }
 }
 
-struct MAC<'a, 'b: 'a> {
-    rx_buffer: &'a mut RxBuffer<'b>,
-    tx_buffer: &'a mut TxBuffer<'b>,
-    eth: &'a mut ETH,
+struct MAC<'a> {
+    rx_buffer: &'a mut RxBuffer,
+    tx_buffer: &'a mut TxBuffer,
+    eth: ETH,
 }
 
-impl<'a, 'b: 'a> MAC<'a, 'b> {
+impl<'a> MAC<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
     fn create(
-        rx_buffer: &'a mut RxBuffer<'b>,
-        tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a mut ETH,
+        rx_buffer: &'a mut RxBuffer,
+        tx_buffer: &'a mut TxBuffer,
+        eth: ETH,
         cmu: &CMU,
         gpio: &GPIO,
-        nvic: &mut NVIC,
-    ) -> MAC<'a, 'b> {
+    ) -> MAC<'a> {
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
@@ -230,7 +228,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             reg.tsutimercomp().set_bit();
             reg
         });
-        NVIC::unmask(Interrupt::ETH);
+        unsafe { efm32gg11b820::NVIC::unmask(Interrupt::ETH) };
 
         // Enable transmitting/receiving and the management interface
         eth.networkctrl.write(|reg| {
@@ -290,14 +288,8 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
 
     fn find_tx_window(&self) -> Option<(usize, usize)> {
         let descriptors = self.tx_buffer.descriptors();
-        let queue_ptr = (unsafe {
-            (*efm32gg11b820::ETH::ptr())
-                .txqptr
-                .read()
-                .dmatxqptr()
-                .bits()
-                << 2
-        } - self.tx_buffer.address() as u32) as usize
+        let queue_ptr = (unsafe { (*ETH::ptr()).txqptr.read().dmatxqptr().bits() << 2 }
+            - self.tx_buffer.address() as u32) as usize
             / mem::size_of::<TxBufferDescriptor>();
 
         // Walk forward from the queue pointer (wrapping around to the beginning of the buffer if
@@ -337,7 +329,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
     }
 }
 
-impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
+impl<'a> mac::MAC for MAC<'a> {
     fn mdio_read(&self, address: u8, register: Register) -> u16 {
         self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
@@ -375,14 +367,10 @@ impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
 
 pub fn isr() {
     interrupt::free(|_| {
-        let eth = unsafe { &(*efm32gg11b820::ETH::ptr()) };
+        let eth = unsafe { &(*ETH::ptr()) };
         let int = eth.ifcr.read();
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
+        let gpio =
+            (unsafe { &*GPIO::ptr() }).split((unsafe { &*CMU::ptr() }).constrain().split().gpio);
         let mut led0 = rgb::CommonAnodeLED::new(
             gpio.ph10.as_output(),
             gpio.ph11.as_output(),
@@ -424,7 +412,7 @@ pub fn isr() {
     });
 }
 
-impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
+impl<'a, 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, P> {
     type RxToken = RxToken<'a>;
     type TxToken = TxToken<'a>;
 
@@ -509,12 +497,8 @@ impl<'a> phy::RxToken for RxToken<'a> {
             dest += 1;
         }
 
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
+        let gpio =
+            (unsafe { &*GPIO::ptr() }).split((unsafe { &*CMU::ptr() }).constrain().split().gpio);
         let mut led1 = rgb::CommonAnodeLED::new(
             gpio.ph13.as_output(),
             gpio.ph14.as_output(),
@@ -561,17 +545,13 @@ impl<'a> phy::TxToken for TxToken<'a> {
         }
 
         unsafe {
-            (*efm32gg11b820::ETH::ptr())
+            (*ETH::ptr())
                 .networkctrl
                 .modify(|_, reg| reg.txstrt().set_bit());
         }
 
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
+        let gpio =
+            (unsafe { &*GPIO::ptr() }).split((unsafe { &*CMU::ptr() }).constrain().split().gpio);
         let mut led0 = rgb::CommonAnodeLED::new(
             gpio.ph10.as_output(),
             gpio.ph11.as_output(),
