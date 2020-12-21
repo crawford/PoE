@@ -5,10 +5,10 @@ authors = ["Alex Crawford <poe@accounts.acrawford.com>"]
 edition = "2018"
 
 [dependencies]
-cortex-m = "0.6.2"
+cortex-m = "0.7.0"
 cortex-m-rt = { version = "0.6.12", features = [ "device" ] }
-cortex-m-log = { version = "0.6.1", optional = true }
-efm32gg11b820 = { version = "0.7.0", features = [ "rt" ] }
+cortex-m-log = { version = "0.7.0", optional = true }
+efm32gg11b820 = { version = "0.9.0", features = [ "rt" ] }
 efm32gg-hal = { git = "https://github.com/crawford/efm32gg-hal", branch = "efm32gg11b820", features = [ "chip-efm32gg11b820" ] }
 embedded-hal = "0.2.3"
 led = "0.2.0"
