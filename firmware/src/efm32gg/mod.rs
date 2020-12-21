@@ -20,7 +20,7 @@ use crate::dma::{
 };
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
-use core::{mem, slice};
+use core::{cmp::min, mem, slice};
 use cortex_m::{asm, interrupt};
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
 use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
@@ -153,10 +153,12 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             reg
         });
 
+        log::debug!("RX Buffer: 0x{:08X}", rx_buffer.address() as u32);
         // Set the RX buffer descriptor queue address
         eth.rxqptr
             .write(|reg| unsafe { reg.dmarxqptr().bits(rx_buffer.address() as u32 >> 2) });
 
+        log::debug!("TX Buffer: 0x{:08X}", tx_buffer.address() as u32);
         // Set the TX buffer descriptor queue address
         eth.txqptr
             .write(|reg| unsafe { reg.dmatxqptr().bits(tx_buffer.address() as u32 >> 2) });
@@ -322,18 +324,19 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         // Reclaim the descriptors of the previously-used transmit window. Unfortunately, the
         // hardware only clears the ownership flag on the first descriptor for a frame.
         for i in 1..((descriptors[start].length() + 127) / 128) {
+            log::debug!("Claiming {}", i);
             descriptors[(start + i) % descriptors.len()].claim()
         }
 
         // Walk forward from the start of the transmit window (wrapping around to the beginning of
         // the buffer if necessary), looking for the last unused descriptor. This will be the end
         // of the transmit window.
-        let mut len = 0;
+        let mut len = 1;
         for i in 1..descriptors.len() {
             if descriptors[(start + i) % descriptors.len()].ownership()
                 == BufferDescriptorOwnership::Software
             {
-                len = i;
+                len += 1;
             } else {
                 break;
             }
@@ -426,6 +429,14 @@ pub fn isr() {
             eth.ifcr.write(|reg| reg.ambaerr().set_bit());
             led0.set(Color::Yellow);
             log::error!("TX AMBA Error Interrupt");
+            log::debug!("TX QPTR: {:#X}", unsafe {
+                (*efm32gg11b820::ETH::ptr())
+                    .txqptr
+                    .read()
+                    .dmatxqptr()
+                    .bits()
+                    << 2
+            });
         }
 
         // XXX: Read from ifcr seems to be racy. I'm guessing its because that register can change
@@ -456,7 +467,7 @@ impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
         let (rx_start, rx_end) = self.mac.find_rx_window()?;
-        let (tx_start, tx_len) = self.mac.find_tx_window()?;
+        let (tx_start, tx_length) = self.mac.find_tx_window()?;
 
         Some((
             RxToken {
@@ -467,18 +478,18 @@ impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
             TxToken {
                 descriptors: self.mac.tx_buffer.descriptors_mut(),
                 start: tx_start,
-                len: tx_len,
+                length: tx_length,
             },
         ))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let (start, len) = self.mac.find_tx_window()?;
+        let (start, length) = self.mac.find_tx_window()?;
 
         Some(TxToken {
             descriptors: self.mac.tx_buffer.descriptors_mut(),
             start,
-            len,
+            length,
         })
     }
 }
@@ -533,9 +544,14 @@ impl<'a> phy::RxToken for RxToken<'a> {
 }
 
 pub struct TxToken<'a> {
+    /// The list of allocated TX buffer descriptors.
     descriptors: &'a mut [TxBufferDescriptor],
+
+    /// The index of the starting TX buffer descriptor.
     start: usize,
-    len: usize,
+
+    /// The length of the token, in TX buffers.
+    length: usize,
 }
 
 impl<'a> phy::TxToken for TxToken<'a> {
@@ -543,8 +559,8 @@ impl<'a> phy::TxToken for TxToken<'a> {
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        if len > (self.len * 128) {
-            log::debug!("Exhausted: len: {}  token.len: {}", len, self.len * 128);
+        if len > (self.length * 128) {
+            log::debug!("Exhausted: len: {}  token.len: {}", len, self.length * 128);
             return Err(Error::Exhausted);
         }
 
@@ -556,18 +572,17 @@ impl<'a> phy::TxToken for TxToken<'a> {
 
         log::debug!("Writing buffer...");
         for i in 0..=last_buffer {
-            log::debug!("  Descriptor {}", i);
             let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
+            log::debug!(
+                "  Descriptor {} ({:#X})",
+                self.start + i,
+                &d as *const _ as usize
+            );
             unsafe { slice::from_raw_parts_mut(d.address() as *mut u8, 128) }
                 .copy_from_slice(&data[(i * 128)..][..128]);
-            if i == 0 {
-                log::debug!("    Length {}", len);
-                d.set_length(len);
-            }
-            if i == last_buffer {
-                log::debug!("    Last buffer");
-                d.set_last_buffer(true);
-            }
+            log::debug!("    Length {}", len);
+            d.set_length(len);
+            d.set_last_buffer(i == last_buffer);
             d.release();
             log::debug!("    {:?}", d);
         }

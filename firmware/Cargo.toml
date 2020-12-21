@@ -18,6 +18,7 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", default-features = fa
 
 [profile.release]
 lto = true
+panic = "abort"
 
 [features]
 logging = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
