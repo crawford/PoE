@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![warn(clippy::all)]
 #![no_main]
 #![no_std]
 
@@ -33,9 +34,8 @@ use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
 use led::rgb::{self, Color};
 use led::LED;
-use rtfm;
-use smoltcp::iface::{EthernetInterface, EthernetInterfaceBuilder, NeighborCache};
-use smoltcp::socket::{SocketHandle, SocketSet, TcpSocket, TcpSocketBuffer};
+use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
+use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
@@ -47,7 +47,7 @@ static LOGGER: semihosting::Logger = semihosting::Logger;
 const APP: () = {
     struct Resources {
         network: network::Resources,
-        peripherals: efm32gg11b820::Peripherals,
+        rtc: efm32gg11b820::RTC,
     }
 
     #[init(spawn = [poll_interface])]
@@ -107,13 +107,9 @@ const APP: () = {
             log::set_max_level(log::LevelFilter::Warn);
         }
 
-        let network = network::ResourceBuilder::new(
-            dma::RxBuffer::new(dma::RxRegion()),
-            dma::TxBuffer::new(dma::TxRegion()),
-        );
-
+        let mut network = network::ResourceBuilder::new(dma::RxBuffer::new(), dma::TxBuffer::new());
+        
         let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
-        let mut neighbor_cache = [None; 8];
         let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 43, 128, 5), 24)];
 
         let network = network.add_iface(
@@ -129,31 +125,28 @@ const APP: () = {
                 .expect("unable to create MACPHY"),
             )
             .ethernet_addr(ethernet_addr)
-            .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))
+            .neighbor_cache(NeighborCache::new(network.neighbor_cache.as_mut()))
             .ip_addrs(ip_addrs.as_mut())
             .finalize(),
         );
 
         let tcp_socket = TcpSocket::new(
-            TcpSocketBuffer::new(network.tcp_rx_payload.as_mut()),
-            TcpSocketBuffer::new(network.tcp_tx_payload.as_mut()),
+            TcpSocketBuffer::new(network.inner.tcp_rx_payload.as_mut()),
+            TcpSocketBuffer::new(network.inner.tcp_tx_payload.as_mut()),
         );
 
         let mut socket_array = [None];
-        network = network.add_sockets(SocketSet::new(socket_array.as_mut()));
+        let network = network.add_sockets(SocketSet::new(socket_array.as_mut()));
 
         let network = network.add_tcp_handle(network.sockets.add(tcp_socket));
 
         ctx.spawn.poll_interface().unwrap();
-        init::LateResources {
-            peripherals: ctx.device,
-            network,
-        }
+        init::LateResources { rtc, network }
     }
 
-    #[task(schedule = [poll_interface], resources = [network, peripherals])]
-    fn poll_interface(mut ctx: poll_interface::Context) {
-        let now = Instant::from_millis(ctx.resources.peripherals.RTC.cnt.read().cnt().bits());
+    #[task(schedule = [poll_interface], resources = [network, rtc])]
+    fn poll_interface(ctx: poll_interface::Context) {
+        let now = Instant::from_millis(ctx.resources.rtc.cnt.read().cnt().bits());
         if let Err(err) = ctx
             .resources
             .network
@@ -168,7 +161,7 @@ const APP: () = {
                 .resources
                 .network
                 .sockets
-                .get::<TcpSocket>(*ctx.resources.network.tcp_handle);
+                .get::<TcpSocket>(ctx.resources.network.tcp_handle);
             if !socket.is_open() {
                 socket.listen(6969).unwrap();
             }

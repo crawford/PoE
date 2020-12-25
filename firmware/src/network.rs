@@ -14,14 +14,16 @@
 
 use crate::efm32gg::{self, dma};
 use crate::ksz8091::KSZ8091;
-use smoltcp::iface::{EthernetInterface, EthernetInterfaceBuilder, NeighborCache};
+use smoltcp::iface::{Neighbor, EthernetInterface};
 use smoltcp::socket::{SocketHandle, SocketSet};
+use smoltcp::wire::IpAddress;
 
 pub struct ResourceBuilder {
-    rx_buffer: dma::RxBuffer,
-    tx_buffer: dma::TxBuffer,
-    tcp_rx_payload: [u8; 128],
-    tcp_tx_payload: [u8; 128],
+    pub rx_buffer: dma::RxBuffer,
+    pub tx_buffer: dma::TxBuffer,
+    pub tcp_rx_payload: [u8; 128],
+    pub tcp_tx_payload: [u8; 128],
+    pub neighbor_cache: [Option<(IpAddress, Neighbor)>; 8],
 }
 
 impl ResourceBuilder {
@@ -31,6 +33,7 @@ impl ResourceBuilder {
             tx_buffer,
             tcp_rx_payload: [0; 128],
             tcp_tx_payload: [0; 128],
+            neighbor_cache: [None; 8],
         }
     }
 
@@ -46,26 +49,29 @@ impl ResourceBuilder {
 }
 
 pub struct ResourceWithIfaceBuilder {
-    inner: ResourceBuilder,
+    pub inner: ResourceBuilder,
     iface: EthernetInterface<'static, 'static, 'static, efm32gg::EFM32GG<'static, KSZ8091>>,
 }
 
-impl<'a, 'b, 'c> ResourceWithIfaceBuilder {
-    pub fn add_sockets(self, sockets: SocketSet<'a, 'b, 'c>) -> ResourceWithIfaceAndSocketsBuilder<'a, 'b, 'c> {
+impl ResourceWithIfaceBuilder {
+    pub fn add_sockets(
+        self,
+        sockets: SocketSet<'static, 'static, 'static>,
+    ) -> ResourceWithIfaceAndSocketsBuilder {
         ResourceWithIfaceAndSocketsBuilder {
             inner: self,
-            sockets: sockets,
+            sockets,
         }
     }
 }
 
-struct ResourceWithIfaceAndSocketsBuilder<'a, 'b, 'c> {
+struct ResourceWithIfaceAndSocketsBuilder {
     inner: ResourceWithIfaceBuilder,
-    sockets: SocketSet<'a, 'b, 'c>,
+    pub sockets: SocketSet<'static, 'static, 'static>,
 }
 
-impl<'a, 'b, 'c> ResourceWithIfaceAndSocketsBuilder<'a, 'b, 'c> {
-    pub fn add_tcp_handle(self, handle: smoltcp::socket::SocketHandle) -> Resources<'a, 'b, 'c> {
+impl ResourceWithIfaceAndSocketsBuilder {
+    pub fn add_tcp_handle(self, handle: smoltcp::socket::SocketHandle) -> Resources {
         Resources {
             iface: self.inner.iface,
             rx_buffer: self.inner.inner.rx_buffer,
@@ -77,9 +83,9 @@ impl<'a, 'b, 'c> ResourceWithIfaceAndSocketsBuilder<'a, 'b, 'c> {
 }
 
 pub struct Resources {
-    iface: EthernetInterface<'static, 'static, 'static, efm32gg::EFM32GG<'static, KSZ8091>>,
+    pub iface: EthernetInterface<'static, 'static, 'static, efm32gg::EFM32GG<'static, KSZ8091>>,
     rx_buffer: dma::RxBuffer,
     tx_buffer: dma::TxBuffer,
-    sockets: SocketSet,
-    tcp_handle: SocketHandle,
+    pub sockets: SocketSet<'static, 'static, 'static>,
+    pub tcp_handle: SocketHandle,
 }

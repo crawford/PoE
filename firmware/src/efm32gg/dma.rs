@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::cell::UnsafeCell;
 use core::fmt;
-use core::ptr::NonNull;
+use vcell::VolatileCell;
 
 #[repr(align(4))]
 pub struct RxRegion(pub [u8; 1536]);
@@ -36,7 +35,7 @@ pub enum BufferDescriptorListWrap {
 pub trait BufferDescriptor {
     fn dangling() -> Self;
     fn new(address: *mut u8) -> Self;
-    fn end_of_list(self) -> Self;
+    fn end_of_list(&mut self);
     fn address(&self) -> u32;
     fn ownership(&self) -> BufferDescriptorOwnership;
     fn release(&mut self);
@@ -44,34 +43,34 @@ pub trait BufferDescriptor {
 }
 
 pub struct RxBuffer {
-    data: UnsafeCell<[u8; 128 * 12]>,
+    data: [u8; 128 * 12],
     descriptor_list: [RxBufferDescriptor; 12],
 }
 
 impl RxBuffer {
     pub fn new() -> RxBuffer {
-        let mut buffer = TxBuffer {
-            data: UnsafeCell::new([0; 1536]),
+        let mut buffer = RxBuffer {
+            data: [0; 1536],
             descriptor_list: [
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
-                TxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
+                RxBufferDescriptor::dangling(),
             ],
         };
 
-        for (i, descriptor) in buffer.descriptor_list.enumerate() {
-            descriptor.address = &mut buffer.data.0[128 * i] as *mut u8
+        for (i, descriptor) in buffer.descriptor_list.iter_mut().enumerate() {
+            descriptor.address = VolatileCell::new(&mut buffer.data[128 * i] as *mut u8 as u32);
         }
-        (buffer.descriptor_list.last().unwrap()).end_of_list();
+        (buffer.descriptor_list.iter_mut().last().unwrap()).end_of_list();
 
         buffer
     }
@@ -91,8 +90,8 @@ impl RxBuffer {
 
 #[repr(C, align(8))]
 pub struct RxBufferDescriptor {
-    address: UnsafeCell<u32>,
-    status: UnsafeCell<u32>,
+    address: VolatileCell<u32>,
+    status: VolatileCell<u32>,
 }
 
 impl fmt::Debug for RxBufferDescriptor {
@@ -116,33 +115,32 @@ impl BufferDescriptor for RxBufferDescriptor {
         debug_assert!((address as u32).trailing_zeros() >= 2);
 
         RxBufferDescriptor {
-            address: UnsafeCell::new(
+            address: VolatileCell::new(
                 address as u32
                     | RxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::NoWrap)
                     | RxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Hardware),
             ),
-            status: UnsafeCell::new(0),
+            status: VolatileCell::new(0),
         }
     }
 
-    fn end_of_list(mut self) -> RxBufferDescriptor {
-        self.address = UnsafeCell::new(
-            unsafe { *self.address.get() }
+    fn end_of_list(&mut self) {
+        self.address = VolatileCell::new(
+            self.address.get()
                 | RxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::Wrap),
         );
-        self
     }
 
     fn address(&self) -> u32 {
-        unsafe { (*self.address.get()) & 0xFFFF_FFFC }
+        (self.address.get()) & 0xFFFF_FFFC
     }
 
     fn ownership(&self) -> BufferDescriptorOwnership {
-        RxBufferDescriptor::ownership_from_word(unsafe { *self.address.get() })
+        RxBufferDescriptor::ownership_from_word(self.address.get())
     }
 
     fn release(&mut self) {
-        self.address = UnsafeCell::new(
+        self.address = VolatileCell::new(
             self.address()
                 | RxBufferDescriptor::wrapping_to_word(self.wrapping())
                 | RxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Hardware),
@@ -150,17 +148,17 @@ impl BufferDescriptor for RxBufferDescriptor {
     }
 
     fn wrapping(&self) -> BufferDescriptorListWrap {
-        RxBufferDescriptor::wrapping_from_word(unsafe { *self.address.get() })
+        RxBufferDescriptor::wrapping_from_word(self.address.get())
     }
 }
 
 impl RxBufferDescriptor {
     pub fn start_of_frame(&self) -> bool {
-        unsafe { (*self.status.get()) & 0x0000_4000 != 0 }
+        (self.status.get()) & 0x0000_4000 != 0
     }
 
     pub fn end_of_frame(&self) -> bool {
-        unsafe { (*self.status.get()) & 0x0000_8000 != 0 }
+        (self.status.get()) & 0x0000_8000 != 0
     }
 
     fn ownership_from_word(byte: u32) -> BufferDescriptorOwnership {
@@ -193,14 +191,14 @@ impl RxBufferDescriptor {
 }
 
 pub struct TxBuffer {
-    data: UnsafeCell<[u8; 128 * 12]>,
+    data: [u8; 128 * 12],
     descriptor_list: [TxBufferDescriptor; 12],
 }
 
 impl TxBuffer {
     pub fn new() -> TxBuffer {
         let mut buffer = TxBuffer {
-            data: UnsafeCell::new([0; 1536]),
+            data: [0; 1536],
             descriptor_list: [
                 TxBufferDescriptor::dangling(),
                 TxBufferDescriptor::dangling(),
@@ -217,10 +215,10 @@ impl TxBuffer {
             ],
         };
 
-        for (i, descriptor) in buffer.descriptor_list.enumerate() {
-            descriptor.address = &mut buffer.data.0[128 * i] as *mut u8
+        for (i, descriptor) in buffer.descriptor_list.iter_mut().enumerate() {
+            descriptor.address = &mut buffer.data[128 * i] as *mut u8 as u32
         }
-        buffer.descriptor_list[11] = buffer.descriptor_list[11].end_of_list();
+        (buffer.descriptor_list.iter_mut().last().unwrap()).end_of_list();
 
         buffer
     }
@@ -241,7 +239,7 @@ impl TxBuffer {
 #[repr(C, align(8))]
 pub struct TxBufferDescriptor {
     address: u32,
-    status: UnsafeCell<u32>,
+    status: VolatileCell<u32>,
 }
 
 impl fmt::Debug for TxBufferDescriptor {
@@ -250,7 +248,7 @@ impl fmt::Debug for TxBufferDescriptor {
             f,
             "Descriptor {{ {:#10X} {:#10X} }}",
             self.address,
-            unsafe { *self.status.get() },
+            self.status.get(),
         )
     }
 }
@@ -259,7 +257,7 @@ impl BufferDescriptor for TxBufferDescriptor {
     fn dangling() -> TxBufferDescriptor {
         TxBufferDescriptor {
             address: 0,
-            status: UnsafeCell::new(
+            status: VolatileCell::new(
                 TxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::NoWrap)
                     | TxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Software),
             ),
@@ -269,19 +267,18 @@ impl BufferDescriptor for TxBufferDescriptor {
     fn new(address: *mut u8) -> TxBufferDescriptor {
         TxBufferDescriptor {
             address: address as u32,
-            status: UnsafeCell::new(
+            status: VolatileCell::new(
                 TxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::NoWrap)
                     | TxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Software),
             ),
         }
     }
 
-    fn end_of_list(mut self) -> TxBufferDescriptor {
-        self.status = UnsafeCell::new(
-            unsafe { *self.status.get() }
+    fn end_of_list(&mut self) {
+        self.status = VolatileCell::new(
+            self.status.get()
                 | TxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::Wrap),
         );
-        self
     }
 
     fn address(&self) -> u32 {
@@ -289,29 +286,27 @@ impl BufferDescriptor for TxBufferDescriptor {
     }
 
     fn ownership(&self) -> BufferDescriptorOwnership {
-        TxBufferDescriptor::ownership_from_word(unsafe { *self.status.get() })
+        TxBufferDescriptor::ownership_from_word(self.status.get())
     }
 
     fn release(&mut self) {
         // XXX: Improve this
-        self.status = UnsafeCell::new(unsafe { *self.status.get() } & !0x8000_0000);
+        self.status = VolatileCell::new(self.status.get() & !0x8000_0000);
     }
 
     fn wrapping(&self) -> BufferDescriptorListWrap {
-        TxBufferDescriptor::wrapping_from_word(unsafe { *self.status.get() })
+        TxBufferDescriptor::wrapping_from_word(self.status.get())
     }
 }
 
 impl TxBufferDescriptor {
     pub fn set_length(&mut self, length: usize) {
-        self.status =
-            UnsafeCell::new((unsafe { *self.status.get() } & !0x0000_3FFF) | length as u32);
+        self.status = VolatileCell::new((self.status.get() & !0x0000_3FFF) | length as u32);
     }
 
     pub fn set_last_buffer(&mut self, last: bool) {
-        self.status = UnsafeCell::new(
-            (unsafe { *self.status.get() } & !0x0000_8000)
-                | if last { 0x0000_8000 } else { 0x0000_0000 },
+        self.status = VolatileCell::new(
+            (self.status.get() & !0x0000_8000) | if last { 0x0000_8000 } else { 0x0000_0000 },
         );
     }
 

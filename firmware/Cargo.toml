@@ -4,6 +4,9 @@ version = "0.1.0-dev"
 authors = ["Alex Crawford <poe@accounts.acrawford.com>"]
 edition = "2018"
 
+[dependencies]
+vcell = "0.1.2"
+
 [dependencies.cortex-m]
 version = "*"
 
