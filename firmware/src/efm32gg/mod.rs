@@ -15,7 +15,7 @@
 pub mod dma;
 
 use crate::mac;
-use crate::phy::{probe_for_phy, Register, PHY};
+use crate::phy::{probe_for_phy, Phy, Register};
 use cortex_m::asm;
 use dma::{
     BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
@@ -29,13 +29,13 @@ use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::{self, phy, time, Error};
 
-pub struct EFM32GG<'a, P: PHY> {
+pub struct EFM32GG<'a, P: Phy> {
     mac: Mac<'a>,
     #[allow(unused)]
     phy: P,
 }
 
-impl<'a, P: PHY> EFM32GG<'a, P> {
+impl<'a, P: Phy> EFM32GG<'a, P> {
     pub fn new<F>(
         rx_buffer: RxBuffer<'a>,
         tx_buffer: TxBuffer<'a>,
@@ -392,23 +392,19 @@ impl<'a> mac::Mac for Mac<'a> {
     }
 }
 
-impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
+impl<'a, P: Phy> phy::Device<'a> for EFM32GG<'_, P> {
     type RxToken = RxToken<'a>;
     type TxToken = TxToken<'a>;
 
     fn capabilities(&self) -> phy::DeviceCapabilities {
         let mut caps = phy::DeviceCapabilities::default();
         caps.max_transmission_unit = 1536;
-        caps.checksum.icmpv4 = phy::Checksum::Both;
-        caps.checksum.ipv4 = phy::Checksum::Both;
-        caps.checksum.tcp = phy::Checksum::Both;
-        caps.checksum.udp = phy::Checksum::Both;
         caps
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
         let (rx_start, rx_end) = self.mac.find_rx_window()?;
-        let (tx_start, tx_len) = self.mac.find_tx_window()?;
+        let (tx_start, tx_length) = self.mac.find_tx_window()?;
 
         Some((
             RxToken {
@@ -419,18 +415,18 @@ impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
             TxToken {
                 descriptors: self.mac.tx_buffer.descriptors_mut(),
                 start: tx_start,
-                len: tx_len,
+                length: tx_length,
             },
         ))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let (start, len) = self.mac.find_tx_window()?;
+        let (start, length) = self.mac.find_tx_window()?;
 
         Some(TxToken {
             descriptors: self.mac.tx_buffer.descriptors_mut(),
             start,
-            len,
+            length,
         })
     }
 }
@@ -472,9 +468,14 @@ impl<'a> phy::RxToken for RxToken<'a> {
 }
 
 pub struct TxToken<'a> {
+    /// The list of allocated TX buffer descriptors.
     descriptors: &'a mut [TxBufferDescriptor],
+
+    /// The index of the starting TX buffer descriptor.
     start: usize,
-    len: usize,
+
+    /// The length of the token, in TX buffers.
+    length: usize,
 }
 
 impl<'a> phy::TxToken for TxToken<'a> {
@@ -482,7 +483,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        if len > (self.len * 128) {
+        if len > (self.length * 128) {
             return Err(Error::Exhausted);
         }
 

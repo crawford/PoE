@@ -17,8 +17,8 @@
 use crate::mac::Mac;
 use core::fmt;
 
-pub trait PHY {
-    fn oui(&self, mac: &dyn Mac) -> OUI;
+pub trait Phy {
+    fn oui(&self, mac: &dyn Mac) -> Oui;
     fn link_state(&self, mac: &dyn Mac) -> LinkState;
     fn set_link_state(&mut self, mac: &dyn Mac, state: LinkState);
 }
@@ -41,9 +41,9 @@ pub enum LinkDuplex {
     FullDuplex,
 }
 
-pub struct OUI(pub [u8; 3]);
+pub struct Oui(pub [u8; 3]);
 
-impl fmt::Display for OUI {
+impl fmt::Display for Oui {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:02X}-{:02X}-{:02X}", self.0[0], self.0[1], self.0[2])
     }
