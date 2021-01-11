@@ -446,10 +446,6 @@ impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
     fn capabilities(&self) -> phy::DeviceCapabilities {
         let mut caps = phy::DeviceCapabilities::default();
         caps.max_transmission_unit = 1536;
-        caps.checksum.icmpv4 = phy::Checksum::Both;
-        caps.checksum.ipv4 = phy::Checksum::Both;
-        caps.checksum.tcp = phy::Checksum::Both;
-        caps.checksum.udp = phy::Checksum::Both;
         caps
     }
 
