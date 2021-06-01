@@ -458,7 +458,7 @@ F 0 "D3" V 6000 2229 50  0000 L CNN
 F 1 "D_Zener" V 6045 2229 50  0001 L CNN
 F 2 "Diode_SMD:D_0402_1005Metric" H 6000 2150 50  0001 C CNN
 F 3 "~" H 6000 2150 50  0001 C CNN
-F 4 "100V" V 6100 2300 50  0000 C CNN "Voltage"
+F 4 "58V" V 6100 2300 50  0000 C CNN "Voltage"
 	1    6000 2150
 	0    1    1    0   
 $EndComp
@@ -2987,10 +2987,10 @@ F 3 "" H 6700 8550 50  0001 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L Connector:TestPoint TP?
+L Connector:TestPoint TP4
 U 1 1 5E1B7989
 P 14700 3300
-F 0 "TP?" H 14800 3550 50  0000 R CNN
+F 0 "TP4" H 14800 3550 50  0000 R CNN
 F 1 "TestPoint" V 14745 3488 50  0001 L CNN
 F 2 "TestPoint:TestPoint_Pad_1.5x1.5mm" H 14900 3300 50  0001 C CNN
 F 3 "~" H 14900 3300 50  0001 C CNN
@@ -3001,10 +3001,10 @@ Connection ~ 14700 3300
 Wire Wire Line
 	14700 3300 14900 3300
 $Comp
-L Connector:TestPoint TP?
+L Connector:TestPoint TP1
 U 1 1 5E1B9E90
 P 13500 2300
-F 0 "TP?" H 13600 2550 50  0000 R CNN
+F 0 "TP1" H 13600 2550 50  0000 R CNN
 F 1 "TestPoint" V 13545 2488 50  0001 L CNN
 F 2 "TestPoint:TestPoint_Pad_1.5x1.5mm" H 13700 2300 50  0001 C CNN
 F 3 "~" H 13700 2300 50  0001 C CNN
@@ -3015,10 +3015,10 @@ Wire Wire Line
 	13500 2300 13550 2300
 Connection ~ 13550 2300
 $Comp
-L Connector:TestPoint TP?
+L Connector:TestPoint TP3
 U 1 1 5E1E8923
 P 10150 3300
-F 0 "TP?" H 10250 3550 50  0000 R CNN
+F 0 "TP3" H 10250 3550 50  0000 R CNN
 F 1 "TestPoint" V 10195 3488 50  0001 L CNN
 F 2 "TestPoint:TestPoint_Pad_1.5x1.5mm" H 10350 3300 50  0001 C CNN
 F 3 "~" H 10350 3300 50  0001 C CNN
@@ -3029,10 +3029,10 @@ Connection ~ 10150 3300
 Wire Wire Line
 	10150 3300 9700 3300
 $Comp
-L Connector:TestPoint TP?
+L Connector:TestPoint TP2
 U 1 1 5E1EBBC9
 P 11250 2600
-F 0 "TP?" H 11350 2850 50  0000 R CNN
+F 0 "TP2" H 11350 2850 50  0000 R CNN
 F 1 "TestPoint" V 11295 2788 50  0001 L CNN
 F 2 "TestPoint:TestPoint_Pad_1.5x1.5mm" H 11450 2600 50  0001 C CNN
 F 3 "~" H 11450 2600 50  0001 C CNN
