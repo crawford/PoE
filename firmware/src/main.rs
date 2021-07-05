@@ -31,7 +31,7 @@ use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
 use led::rgb::{self, Color};
 use led::LED;
-use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
+use smoltcp::iface::{InterfaceBuilder, NeighborCache};
 use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
@@ -123,7 +123,7 @@ fn main() -> ! {
     let mut rx_buffer = dma::RxBuffer::new(&mut rx_region);
     let mut tx_buffer = dma::TxBuffer::new(&mut tx_region);
 
-    let mut iface = EthernetInterfaceBuilder::new(
+    let mut iface = InterfaceBuilder::new(
         efm32gg::EFM32GG::create(
             &mut rx_buffer,
             &mut tx_buffer,

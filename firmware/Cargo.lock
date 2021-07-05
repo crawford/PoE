@@ -130,9 +130,9 @@ dependencies = [
 
 [[package]]
 name = "managed"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c75de51135344a4f8ed3cfe2720dc27736f7711989703a0b43aadf3753c55577"
+checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
 
 [[package]]
 name = "nb"
@@ -224,9 +224,8 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "smoltcp"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fe46639fd2ec79eadf8fe719f237a7a0bd4dac5d957f1ca5bbdbc1c3c39e53a"
+version = "0.8.0"
+source = "git+https://github.com/smoltcp-rs/smoltcp#1134eb28d8c6886034f6ccad452101dc5e6d679c"
 dependencies = [
  "bitflags",
  "byteorder",
