@@ -43,43 +43,99 @@ pub trait BufferDescriptor {
 }
 
 pub struct RxBuffer<'a> {
-    descriptor_list: [RxBufferDescriptor; 12],
-    inner: PhantomData<&'a mut [u8; 128 * 12]>,
+    descriptors: &'a mut RxDescriptors,
+    region: PhantomData<&'a mut RxRegion>,
 }
 
 impl<'a> RxBuffer<'a> {
-    pub fn new(region: &'a mut RxRegion) -> RxBuffer<'a> {
+    #[allow(clippy::identity_op, clippy::erasing_op)]
+    pub fn new(region: &'a mut RxRegion, descriptors: &'a mut RxDescriptors) -> RxBuffer<'a> {
+        descriptors.0[0] = RxBufferDescriptor::new(&mut region.0[128 * 0..][..128]);
+        descriptors.0[1] = RxBufferDescriptor::new(&mut region.0[128 * 1..][..128]);
+        descriptors.0[2] = RxBufferDescriptor::new(&mut region.0[128 * 2..][..128]);
+        descriptors.0[3] = RxBufferDescriptor::new(&mut region.0[128 * 3..][..128]);
+        descriptors.0[4] = RxBufferDescriptor::new(&mut region.0[128 * 4..][..128]);
+        descriptors.0[5] = RxBufferDescriptor::new(&mut region.0[128 * 5..][..128]);
+        descriptors.0[6] = RxBufferDescriptor::new(&mut region.0[128 * 6..][..128]);
+        descriptors.0[7] = RxBufferDescriptor::new(&mut region.0[128 * 7..][..128]);
+        descriptors.0[8] = RxBufferDescriptor::new(&mut region.0[128 * 8..][..128]);
+        descriptors.0[9] = RxBufferDescriptor::new(&mut region.0[128 * 9..][..128]);
+        descriptors.0[10] = RxBufferDescriptor::new(&mut region.0[128 * 10..][..128]);
+        descriptors.0[11] = RxBufferDescriptor::new(&mut region.0[128 * 11..][..128]).end_of_list();
+
         RxBuffer {
-            descriptor_list: [
-                #[allow(clippy::identity_op, clippy::erasing_op)]
-                RxBufferDescriptor::new(&mut region.0[128 * 0..128 * 1]),
-                #[allow(clippy::identity_op)]
-                RxBufferDescriptor::new(&mut region.0[128 * 1..128 * 2]),
-                RxBufferDescriptor::new(&mut region.0[128 * 2..128 * 3]),
-                RxBufferDescriptor::new(&mut region.0[128 * 3..128 * 4]),
-                RxBufferDescriptor::new(&mut region.0[128 * 4..128 * 5]),
-                RxBufferDescriptor::new(&mut region.0[128 * 5..128 * 6]),
-                RxBufferDescriptor::new(&mut region.0[128 * 6..128 * 7]),
-                RxBufferDescriptor::new(&mut region.0[128 * 7..128 * 8]),
-                RxBufferDescriptor::new(&mut region.0[128 * 8..128 * 9]),
-                RxBufferDescriptor::new(&mut region.0[128 * 9..128 * 10]),
-                RxBufferDescriptor::new(&mut region.0[128 * 10..128 * 11]),
-                RxBufferDescriptor::new(&mut region.0[128 * 11..128 * 12]).end_of_list(),
-            ],
-            inner: PhantomData,
+            descriptors,
+            region: PhantomData,
         }
     }
 
     pub fn descriptors(&self) -> &[RxBufferDescriptor] {
-        &self.descriptor_list
+        &self.descriptors.0
     }
 
     pub fn descriptors_mut(&mut self) -> &mut [RxBufferDescriptor] {
-        &mut self.descriptor_list
+        &mut self.descriptors.0
     }
 
     pub fn address(&self) -> *const RxBufferDescriptor {
-        self.descriptor_list.as_ptr()
+        self.descriptors.0.as_ptr()
+    }
+}
+
+pub struct RxDescriptors([RxBufferDescriptor; 12]);
+
+impl RxDescriptors {
+    pub const fn new() -> RxDescriptors {
+        RxDescriptors([
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+            RxBufferDescriptor {
+                address: UnsafeCell::new(0),
+                status: UnsafeCell::new(0),
+            },
+        ])
     }
 }
 
@@ -189,39 +245,95 @@ impl RxBufferDescriptor {
 }
 
 pub struct TxBuffer<'a> {
-    descriptor_list: [TxBufferDescriptor; 12],
-    inner: PhantomData<&'a mut [u8; 128 * 12]>,
+    descriptors: &'a mut TxDescriptors,
+    region: PhantomData<&'a mut TxRegion>,
 }
 
 impl<'a> TxBuffer<'a> {
-    pub fn new(region: &'a mut TxRegion) -> TxBuffer<'a> {
+    #[allow(clippy::identity_op, clippy::erasing_op)]
+    pub fn new(region: &'a mut TxRegion, descriptors: &'a mut TxDescriptors) -> TxBuffer<'a> {
+        descriptors.0[0] = TxBufferDescriptor::new(&mut region.0[128 * 0..][..128]);
+        descriptors.0[1] = TxBufferDescriptor::new(&mut region.0[128 * 1..][..128]);
+        descriptors.0[2] = TxBufferDescriptor::new(&mut region.0[128 * 2..][..128]);
+        descriptors.0[3] = TxBufferDescriptor::new(&mut region.0[128 * 3..][..128]);
+        descriptors.0[4] = TxBufferDescriptor::new(&mut region.0[128 * 4..][..128]);
+        descriptors.0[5] = TxBufferDescriptor::new(&mut region.0[128 * 5..][..128]);
+        descriptors.0[6] = TxBufferDescriptor::new(&mut region.0[128 * 6..][..128]);
+        descriptors.0[7] = TxBufferDescriptor::new(&mut region.0[128 * 7..][..128]);
+        descriptors.0[8] = TxBufferDescriptor::new(&mut region.0[128 * 8..][..128]);
+        descriptors.0[9] = TxBufferDescriptor::new(&mut region.0[128 * 9..][..128]);
+        descriptors.0[10] = TxBufferDescriptor::new(&mut region.0[128 * 10..][..128]);
+        descriptors.0[11] = TxBufferDescriptor::new(&mut region.0[128 * 11..][..128]).end_of_list();
+
         TxBuffer {
-            descriptor_list: [
-                #[allow(clippy::identity_op, clippy::erasing_op)]
-                TxBufferDescriptor::new(&mut region.0[128 * 0..128 * 1]),
-                #[allow(clippy::identity_op)]
-                TxBufferDescriptor::new(&mut region.0[128 * 1..128 * 2]),
-                TxBufferDescriptor::new(&mut region.0[128 * 2..128 * 3]),
-                TxBufferDescriptor::new(&mut region.0[128 * 3..128 * 4]),
-                TxBufferDescriptor::new(&mut region.0[128 * 4..128 * 5]),
-                TxBufferDescriptor::new(&mut region.0[128 * 5..128 * 6]),
-                TxBufferDescriptor::new(&mut region.0[128 * 6..128 * 7]),
-                TxBufferDescriptor::new(&mut region.0[128 * 7..128 * 8]),
-                TxBufferDescriptor::new(&mut region.0[128 * 8..128 * 9]),
-                TxBufferDescriptor::new(&mut region.0[128 * 9..128 * 10]),
-                TxBufferDescriptor::new(&mut region.0[128 * 10..128 * 11]),
-                TxBufferDescriptor::new(&mut region.0[128 * 11..128 * 12]).end_of_list(),
-            ],
-            inner: PhantomData,
+            descriptors,
+            region: PhantomData,
         }
     }
 
     pub fn descriptors_mut(&mut self) -> &mut [TxBufferDescriptor] {
-        &mut self.descriptor_list
+        &mut self.descriptors.0
     }
 
     pub fn address(&self) -> *const TxBufferDescriptor {
-        self.descriptor_list.as_ptr()
+        self.descriptors.0.as_ptr()
+    }
+}
+
+pub struct TxDescriptors([TxBufferDescriptor; 12]);
+
+impl TxDescriptors {
+    pub const fn new() -> TxDescriptors {
+        TxDescriptors([
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+            TxBufferDescriptor {
+                address: 0,
+                status: UnsafeCell::new(0),
+            },
+        ])
     }
 }
 

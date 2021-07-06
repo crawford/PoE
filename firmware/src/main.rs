@@ -40,8 +40,10 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 fn main() -> ! {
     let mut rx_region = dma::RxRegion([0; 1536]);
     let mut tx_region = dma::TxRegion([0; 1536]);
-    let mut rx_buffer = dma::RxBuffer::new(&mut rx_region);
-    let mut tx_buffer = dma::TxBuffer::new(&mut tx_region);
+    let mut rx_descriptors = dma::RxDescriptors::new();
+    let mut tx_descriptors = dma::TxDescriptors::new();
+    let rx_buffer = dma::RxBuffer::new(&mut rx_region, &mut rx_descriptors);
+    let tx_buffer = dma::TxBuffer::new(&mut tx_region, &mut tx_descriptors);
 
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
@@ -124,15 +126,8 @@ fn main() -> ! {
     let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 1, 0, 3), 24)];
 
     let mut iface = InterfaceBuilder::new(
-        efm32gg::EFM32GG::new(
-            &mut rx_buffer,
-            &mut tx_buffer,
-            eth,
-            &cmu,
-            &gpio,
-            KSZ8091::new,
-        )
-        .expect("unable to create MACPHY"),
+        efm32gg::EFM32GG::new(rx_buffer, tx_buffer, eth, &cmu, &gpio, KSZ8091::new)
+            .expect("unable to create MACPHY"),
     )
     .ethernet_addr(ethernet_addr)
     .neighbor_cache(NeighborCache::new(neighbor_cache.as_mut()))

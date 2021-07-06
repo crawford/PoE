@@ -35,8 +35,8 @@ pub struct EFM32GG<'a, P: PHY> {
 
 impl<'a, P: PHY> EFM32GG<'a, P> {
     pub fn new<F>(
-        rx_buffer: &'a mut RxBuffer<'a>,
-        tx_buffer: &'a mut TxBuffer<'a>,
+        rx_buffer: RxBuffer<'a>,
+        tx_buffer: TxBuffer<'a>,
         eth: ETH,
         cmu: &CMU,
         gpio: &GPIO,
@@ -60,8 +60,8 @@ impl<'a, P: PHY> EFM32GG<'a, P> {
 }
 
 struct Mac<'a> {
-    rx_buffer: &'a mut RxBuffer<'a>,
-    tx_buffer: &'a mut TxBuffer<'a>,
+    rx_buffer: RxBuffer<'a>,
+    tx_buffer: TxBuffer<'a>,
     eth: ETH,
 }
 
@@ -69,8 +69,8 @@ impl<'a> Mac<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
     fn new(
-        rx_buffer: &'a mut RxBuffer<'a>,
-        tx_buffer: &'a mut TxBuffer<'a>,
+        rx_buffer: RxBuffer<'a>,
+        tx_buffer: TxBuffer<'a>,
         eth: ETH,
         cmu: &CMU,
         gpio: &GPIO,
