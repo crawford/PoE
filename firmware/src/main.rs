@@ -28,7 +28,7 @@ use core::fmt::Write;
 use cortex_m::{asm, peripheral};
 use efm32gg11b820::interrupt;
 use efm32gg_hal::cmu::CMUExt;
-use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
+use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::iface::{InterfaceBuilder, NeighborCache};
@@ -183,65 +183,57 @@ fn ETH() {
 
 // Light up both LEDs red, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
-fn DefaultHandler(_irqn: i16) {
+fn DefaultHandler(irqn: i16) {
     cortex_m::interrupt::disable();
 
-    let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-        (unsafe { &*efm32gg11b820::CMU::ptr() })
-            .constrain()
-            .split()
-            .gpio,
-    );
-    let mut led0 = rgb::CommonAnodeLED::new(
-        gpio.ph10.as_output(),
-        gpio.ph11.as_output(),
-        gpio.ph12.as_output(),
-    );
-    let mut led1 = rgb::CommonAnodeLED::new(
-        gpio.ph13.as_output(),
-        gpio.ph14.as_output(),
-        gpio.ph15.as_output(),
-    );
-
+    log::error!("Default Handler: irq {}", irqn);
+    let (mut led0, mut led1) = unsafe { steal_leds() };
     led0.set(Color::Red);
     led1.set(Color::Red);
 
-    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+    if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
     }
+
     loop {
         asm::wfe();
     }
 }
 
+// Light up both LEDs red, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
 fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     cortex_m::interrupt::disable();
 
-    let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-        (unsafe { &*efm32gg11b820::CMU::ptr() })
-            .constrain()
-            .split()
-            .gpio,
-    );
-    let mut led0 = rgb::CommonAnodeLED::new(
-        gpio.ph10.as_output(),
-        gpio.ph11.as_output(),
-        gpio.ph12.as_output(),
-    );
-    let mut led1 = rgb::CommonAnodeLED::new(
-        gpio.ph13.as_output(),
-        gpio.ph14.as_output(),
-        gpio.ph15.as_output(),
-    );
-
+    let (mut led0, mut led1) = unsafe { steal_leds() };
     led0.set(Color::Red);
     led1.set(Color::Red);
 
-    if unsafe { (*peripheral::DCB::ptr()).dhcsr.read() & 0x0000_0001 } != 0 {
+    if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
     }
+
     loop {
         asm::wfe();
     }
+}
+
+type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
+type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
+
+unsafe fn steal_leds() -> (LED0, LED1) {
+    let gpio = (&*efm32gg11b820::GPIO::ptr())
+        .split((&*efm32gg11b820::CMU::ptr()).constrain().split().gpio);
+    let led0 = rgb::CommonAnodeLED::new(
+        gpio.ph10.as_opendrain(),
+        gpio.ph11.as_opendrain(),
+        gpio.ph12.as_opendrain(),
+    );
+    let led1 = rgb::CommonAnodeLED::new(
+        gpio.ph13.as_opendrain(),
+        gpio.ph14.as_opendrain(),
+        gpio.ph15.as_opendrain(),
+    );
+
+    (led0, led1)
 }
