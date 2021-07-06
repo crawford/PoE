@@ -1,11 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env nix-shell
+#!nix-shell -i sh -p openocd
 
-# XXX: Use a vanilla build of OpenOCD at some point
-~/openocd/src/openocd \
-	--search ~/openocd/tcl \
+openocd \
 	--file openocd.cfg \
-	--command "program $1 verify" \
-	--command "init" \
-	--command "reset run" \
-	--command "resume" \
-	--command "exit"
+	--command "program $1 verify reset exit"
