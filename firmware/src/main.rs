@@ -174,9 +174,6 @@ fn main() -> ! {
     // );
 
     loop {
-        asm::wfe();
-        log::debug!("Exiting WFE");
-
         let timestamp = Instant::from_millis(rtc.cnt.read().cnt().bits());
         log::debug!("iface.poll: {}", timestamp);
         if let Err(err) = iface.poll(&mut sockets, timestamp) {
@@ -231,6 +228,13 @@ fn main() -> ! {
             "Handled sockets: {}",
             Instant::from_millis(rtc.cnt.read().cnt().bits())
         );
+
+        if let Some(duration) = iface.poll_delay(&sockets, timestamp) {
+            log::debug!("Sleeping: {}", duration);
+            // XXX: actually wake up!
+            asm::wfe();
+            log::debug!("Exiting WFE");
+        }
     }
 }
 

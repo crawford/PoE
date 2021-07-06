@@ -578,13 +578,20 @@ impl<'a> phy::TxToken for TxToken<'a> {
                 self.start + i,
                 &d as *const _ as usize
             );
+
+            // ALEX: d.ptr()?
             unsafe { slice::from_raw_parts_mut(d.address() as *mut u8, 128) }
                 .copy_from_slice(&data[(i * 128)..][..128]);
-            log::debug!("    Length {}", len);
-            d.set_length(len);
+
+            // XXX: Which is correct?
+            let buffer_len = len;
+            //let buffer_len = min(128, len - (i * 128);
+
+            log::debug!("    Length {}", buffer_len);
+            d.set_length(buffer_len);
             d.set_last_buffer(i == last_buffer);
-            d.release();
             log::debug!("    {:?}", d);
+            d.release();
         }
         log::debug!("Writing buffer...done");
 
