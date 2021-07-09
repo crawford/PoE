@@ -14,25 +14,28 @@
 
 // XXX: Figure out error handling
 
-use crate::mac::MAC;
+use crate::mac::Mac;
 use core::fmt;
 
 pub trait PHY {
-    fn oui(&self, mac: &dyn MAC) -> OUI;
-    fn link_state(&self, mac: &dyn MAC) -> LinkState;
-    fn set_link_state(&mut self, mac: &dyn MAC, state: LinkState);
+    fn oui(&self, mac: &dyn Mac) -> OUI;
+    fn link_state(&self, mac: &dyn Mac) -> LinkState;
+    fn set_link_state(&mut self, mac: &dyn Mac, state: LinkState);
 }
 
+#[allow(unused)]
 pub struct LinkState {
     pub speed: LinkSpeed,
     pub duplex: LinkDuplex,
 }
 
+#[allow(unused)]
 pub enum LinkSpeed {
     TenMbps,
     HundredMbps,
 }
 
+#[allow(unused)]
 pub enum LinkDuplex {
     HalfDuplex,
     FullDuplex,
@@ -80,7 +83,7 @@ impl From<Register> for u8 {
     }
 }
 
-pub fn probe_for_phy<M: MAC>(mac: &M) -> Option<u8> {
+pub fn probe_for_phy<M: Mac>(mac: &M) -> Option<u8> {
     (0..32).find(|addr| {
         let id1 = mac.mdio_read(*addr, Register::PhyId1);
         let id2 = mac.mdio_read(*addr, Register::PhyId2);

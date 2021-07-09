@@ -14,7 +14,7 @@
 
 use crate::phy::Register;
 
-pub trait MAC {
+pub trait Mac {
     fn mdio_read(&self, address: u8, register: Register) -> u16;
     fn mdio_write(&mut self, address: u8, register: Register, data: u16);
 }
