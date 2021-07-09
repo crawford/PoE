@@ -34,7 +34,7 @@ pub enum BufferDescriptorListWrap {
 }
 
 pub trait BufferDescriptor {
-    fn new(address: *mut u8) -> Self;
+    fn new(address: &mut [u8]) -> Self;
     fn end_of_list(self) -> Self;
     fn address(&self) -> u32;
     fn ownership(&self) -> BufferDescriptorOwnership;
@@ -51,18 +51,20 @@ impl<'a> RxBuffer<'a> {
     pub fn new(region: &'a mut RxRegion) -> RxBuffer<'a> {
         RxBuffer {
             descriptor_list: [
-                RxBufferDescriptor::new(&mut region.0[0] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 2] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 3] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 4] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 5] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 6] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 7] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 8] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 9] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 10] as *mut u8),
-                RxBufferDescriptor::new(&mut region.0[128 * 11] as *mut u8).end_of_list(),
+                #[allow(clippy::identity_op, clippy::erasing_op)]
+                RxBufferDescriptor::new(&mut region.0[128 * 0..128 * 1]),
+                #[allow(clippy::identity_op)]
+                RxBufferDescriptor::new(&mut region.0[128 * 1..128 * 2]),
+                RxBufferDescriptor::new(&mut region.0[128 * 2..128 * 3]),
+                RxBufferDescriptor::new(&mut region.0[128 * 3..128 * 4]),
+                RxBufferDescriptor::new(&mut region.0[128 * 4..128 * 5]),
+                RxBufferDescriptor::new(&mut region.0[128 * 5..128 * 6]),
+                RxBufferDescriptor::new(&mut region.0[128 * 6..128 * 7]),
+                RxBufferDescriptor::new(&mut region.0[128 * 7..128 * 8]),
+                RxBufferDescriptor::new(&mut region.0[128 * 8..128 * 9]),
+                RxBufferDescriptor::new(&mut region.0[128 * 9..128 * 10]),
+                RxBufferDescriptor::new(&mut region.0[128 * 10..128 * 11]),
+                RxBufferDescriptor::new(&mut region.0[128 * 11..128 * 12]).end_of_list(),
             ],
             inner: PhantomData,
         }
@@ -100,12 +102,12 @@ impl fmt::Debug for RxBufferDescriptor {
 }
 
 impl BufferDescriptor for RxBufferDescriptor {
-    fn new(address: *mut u8) -> RxBufferDescriptor {
-        debug_assert!((address as u32).trailing_zeros() >= 2);
+    fn new(address: &mut [u8]) -> RxBufferDescriptor {
+        debug_assert!((address.as_ptr() as u32).trailing_zeros() >= 2);
 
         RxBufferDescriptor {
             address: UnsafeCell::new(
-                address as u32
+                address.as_ptr() as u32
                     | RxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::NoWrap)
                     | RxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Hardware),
             ),
@@ -189,18 +191,20 @@ impl<'a> TxBuffer<'a> {
     pub fn new(region: &'a mut TxRegion) -> TxBuffer<'a> {
         TxBuffer {
             descriptor_list: [
-                TxBufferDescriptor::new(&mut region.0[0] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 2] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 3] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 4] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 5] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 6] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 7] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 8] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 9] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 10] as *mut u8),
-                TxBufferDescriptor::new(&mut region.0[128 * 11] as *mut u8).end_of_list(),
+                #[allow(clippy::identity_op, clippy::erasing_op)]
+                TxBufferDescriptor::new(&mut region.0[128 * 0..128 * 1]),
+                #[allow(clippy::identity_op)]
+                TxBufferDescriptor::new(&mut region.0[128 * 1..128 * 2]),
+                TxBufferDescriptor::new(&mut region.0[128 * 2..128 * 3]),
+                TxBufferDescriptor::new(&mut region.0[128 * 3..128 * 4]),
+                TxBufferDescriptor::new(&mut region.0[128 * 4..128 * 5]),
+                TxBufferDescriptor::new(&mut region.0[128 * 5..128 * 6]),
+                TxBufferDescriptor::new(&mut region.0[128 * 6..128 * 7]),
+                TxBufferDescriptor::new(&mut region.0[128 * 7..128 * 8]),
+                TxBufferDescriptor::new(&mut region.0[128 * 8..128 * 9]),
+                TxBufferDescriptor::new(&mut region.0[128 * 9..128 * 10]),
+                TxBufferDescriptor::new(&mut region.0[128 * 10..128 * 11]),
+                TxBufferDescriptor::new(&mut region.0[128 * 11..128 * 12]).end_of_list(),
             ],
             inner: PhantomData,
         }
@@ -233,9 +237,9 @@ impl fmt::Debug for TxBufferDescriptor {
 }
 
 impl BufferDescriptor for TxBufferDescriptor {
-    fn new(address: *mut u8) -> TxBufferDescriptor {
+    fn new(address: &mut [u8]) -> TxBufferDescriptor {
         TxBufferDescriptor {
-            address: address as u32,
+            address: address.as_ptr() as u32,
             status: UnsafeCell::new(
                 TxBufferDescriptor::wrapping_to_word(BufferDescriptorListWrap::NoWrap)
                     | TxBufferDescriptor::ownership_to_word(BufferDescriptorOwnership::Software),
