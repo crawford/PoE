@@ -28,25 +28,25 @@ use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::{self, phy, time, Error};
 
-pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
-    mac: Mac<'a, 'b>,
+pub struct EFM32GG<'a, P: PHY> {
+    mac: Mac<'a>,
     #[allow(unused)]
     phy: P,
 }
 
-impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
-    pub fn create<F>(
-        rx_buffer: &'a mut RxBuffer<'b>,
-        tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a ETH,
+impl<'a, P: PHY> EFM32GG<'a, P> {
+    pub fn new<F>(
+        rx_buffer: &'a mut RxBuffer<'a>,
+        tx_buffer: &'a mut TxBuffer<'a>,
+        eth: ETH,
         cmu: &CMU,
         gpio: &GPIO,
         new_phy: F,
-    ) -> Result<EFM32GG<'a, 'b, P>, &'static str>
+    ) -> Result<EFM32GG<'a, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = Mac::create(rx_buffer, tx_buffer, eth, cmu, gpio);
+        let mac = Mac::new(rx_buffer, tx_buffer, eth, cmu, gpio);
 
         // XXX: Wait for the PHY
         for _ in 0..1000 {
@@ -60,22 +60,22 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
     }
 }
 
-struct Mac<'a, 'b: 'a> {
-    rx_buffer: &'a mut RxBuffer<'b>,
-    tx_buffer: &'a mut TxBuffer<'b>,
-    eth: &'a ETH,
+struct Mac<'a> {
+    rx_buffer: &'a mut RxBuffer<'a>,
+    tx_buffer: &'a mut TxBuffer<'a>,
+    eth: ETH,
 }
 
-impl<'a, 'b: 'a> Mac<'a, 'b> {
+impl<'a> Mac<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
-    fn create(
-        rx_buffer: &'a mut RxBuffer<'b>,
-        tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a ETH,
+    fn new(
+        rx_buffer: &'a mut RxBuffer<'a>,
+        tx_buffer: &'a mut TxBuffer<'a>,
+        eth: ETH,
         cmu: &CMU,
         gpio: &GPIO,
-    ) -> Mac<'a, 'b> {
+    ) -> Mac<'a> {
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
@@ -335,7 +335,7 @@ impl<'a, 'b: 'a> Mac<'a, 'b> {
     }
 }
 
-impl<'a, 'b> mac::Mac for Mac<'a, 'b> {
+impl<'a> mac::Mac for Mac<'a> {
     fn mdio_read(&self, address: u8, register: Register) -> u16 {
         self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
@@ -422,7 +422,7 @@ pub fn isr() {
     });
 }
 
-impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
+impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
     type RxToken = RxToken<'a>;
     type TxToken = TxToken<'a>;
 
