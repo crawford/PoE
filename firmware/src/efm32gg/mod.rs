@@ -20,7 +20,6 @@ use crate::dma::{
 };
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
-use core::{mem, slice};
 use cortex_m::{asm, interrupt};
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
 use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
@@ -292,7 +291,7 @@ impl<'a> Mac<'a> {
     fn find_tx_window(&mut self) -> Option<(usize, usize)> {
         let queue_ptr = (unsafe { (*ETH::ptr()).txqptr.read().dmatxqptr().bits() << 2 }
             - self.tx_buffer.address() as u32) as usize
-            / mem::size_of::<TxBufferDescriptor>();
+            / core::mem::size_of::<TxBufferDescriptor>();
         let descriptors = self.tx_buffer.descriptors_mut();
 
         // Walk forward from the queue pointer (wrapping around to the beginning of the buffer if
@@ -480,10 +479,10 @@ impl<'a> phy::RxToken for RxToken<'a> {
 
         let mut orig = self.start;
         let mut dest = 0;
+
         loop {
             let d = &mut self.descriptors[orig];
-            data[(dest * 128)..][..128]
-                .copy_from_slice(unsafe { slice::from_raw_parts(d.address() as *const u8, 128) });
+            data[(dest * 128)..][..128].copy_from_slice(d.as_slice());
             d.release();
 
             if orig == self.end {
@@ -534,8 +533,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
 
         for i in 0..=last_buffer {
             let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
-            unsafe { slice::from_raw_parts_mut(d.address() as *mut u8, 128) }
-                .copy_from_slice(&data[(i * 128)..][..128]);
+            d.as_slice_mut().copy_from_slice(&data[(i * 128)..][..128]);
             if i == 0 {
                 d.set_length(len);
             }
