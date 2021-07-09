@@ -16,8 +16,12 @@ log = "0.4.8"
 panic-itm = "0.4.1"
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", default-features = false, features = [ "socket-dhcpv4", "socket-tcp" ] }
 
+[profile.dev]
+opt-level = "s"
+
 [profile.release]
 lto = true
+opt-level = "s"
 
 [features]
 logging = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
