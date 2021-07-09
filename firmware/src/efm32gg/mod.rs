@@ -29,7 +29,8 @@ use led::LED;
 use smoltcp::{self, phy, time, Error};
 
 pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
-    mac: MAC<'a, 'b>,
+    mac: Mac<'a, 'b>,
+    #[allow(unused)]
     phy: P,
 }
 
@@ -45,7 +46,7 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio);
+        let mac = Mac::create(rx_buffer, tx_buffer, eth, cmu, gpio);
 
         // XXX: Wait for the PHY
         for _ in 0..1000 {
@@ -59,13 +60,13 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
     }
 }
 
-struct MAC<'a, 'b: 'a> {
+struct Mac<'a, 'b: 'a> {
     rx_buffer: &'a mut RxBuffer<'b>,
     tx_buffer: &'a mut TxBuffer<'b>,
     eth: &'a ETH,
 }
 
-impl<'a, 'b: 'a> MAC<'a, 'b> {
+impl<'a, 'b: 'a> Mac<'a, 'b> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
     fn create(
@@ -74,7 +75,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         eth: &'a ETH,
         cmu: &CMU,
         gpio: &GPIO,
-    ) -> MAC<'a, 'b> {
+    ) -> Mac<'a, 'b> {
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
@@ -247,7 +248,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
 
-        MAC {
+        Mac {
             rx_buffer,
             tx_buffer,
             eth,
@@ -289,14 +290,8 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
     }
 
     fn find_tx_window(&mut self) -> Option<(usize, usize)> {
-        let queue_ptr = (unsafe {
-            (*efm32gg11b820::ETH::ptr())
-                .txqptr
-                .read()
-                .dmatxqptr()
-                .bits()
-                << 2
-        } - self.tx_buffer.address() as u32) as usize
+        let queue_ptr = (unsafe { (*ETH::ptr()).txqptr.read().dmatxqptr().bits() << 2 }
+            - self.tx_buffer.address() as u32) as usize
             / mem::size_of::<TxBufferDescriptor>();
         let descriptors = self.tx_buffer.descriptors_mut();
 
@@ -340,7 +335,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
     }
 }
 
-impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
+impl<'a, 'b> mac::Mac for Mac<'a, 'b> {
     fn mdio_read(&self, address: u8, register: Register) -> u16 {
         self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
@@ -486,13 +481,10 @@ impl<'a> phy::RxToken for RxToken<'a> {
         let mut orig = self.start;
         let mut dest = 0;
         loop {
-            {
-                let d = &mut self.descriptors[orig];
-                data[(dest * 128)..][..128].copy_from_slice(unsafe {
-                    slice::from_raw_parts(d.address() as *const u8, 128)
-                });
-                d.release();
-            }
+            let d = &mut self.descriptors[orig];
+            data[(dest * 128)..][..128]
+                .copy_from_slice(unsafe { slice::from_raw_parts(d.address() as *const u8, 128) });
+            d.release();
 
             if orig == self.end {
                 break;
