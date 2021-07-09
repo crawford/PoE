@@ -25,7 +25,7 @@ use crate::efm32gg::dma;
 use crate::ksz8091::KSZ8091;
 use core::fmt::Write;
 use core::pin::Pin;
-use cortex_m::{asm, peripheral};
+use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use ignore_result::Ignore;
@@ -227,11 +227,17 @@ const APP: () = {
         log::trace!("Finished handling network");
     }
 
-    #[task(binds = ETH, resources = [led0], spawn = [handle_network])]
+    #[task(binds = ETH, resources = [network, led0, led1], spawn = [handle_network])]
     fn eth_irq(cx: eth_irq::Context) {
+        let eth_irq::Resources {
+            led0,
+            led1,
+            network,
+        } = cx.resources;
+
         log::trace!("Interrupt - ETH");
 
-        efm32gg::isr();
+        interrupt::free(|_| network.interface.device_mut().irq(led0, led1));
 
         cx.spawn.handle_network().ignore();
     }
@@ -245,7 +251,7 @@ const APP: () = {
 // Light up both LEDs red, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
 fn DefaultHandler(irqn: i16) {
-    cortex_m::interrupt::disable();
+    interrupt::disable();
 
     log::error!("Default Handler: irq {}", irqn);
     let (mut led0, mut led1) = unsafe { steal_leds() };
@@ -264,7 +270,7 @@ fn DefaultHandler(irqn: i16) {
 // Light up both LEDs red, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
 fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
-    cortex_m::interrupt::disable();
+    interrupt::disable();
 
     let (mut led0, mut led1) = unsafe { steal_leds() };
     led0.set(Color::Red);

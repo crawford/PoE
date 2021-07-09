@@ -20,7 +20,7 @@ use crate::dma::{
 };
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
-use cortex_m::{asm, interrupt};
+use cortex_m::asm;
 use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
 use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
 use led::rgb::{self, Color};
@@ -56,6 +56,10 @@ impl<'a, P: PHY> EFM32GG<'a, P> {
         log::debug!("OUI: {}", phy.oui(&mac));
 
         Ok(EFM32GG { mac, phy })
+    }
+
+    pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
+        self.mac.irq(led0, led1)
     }
 }
 
@@ -332,6 +336,38 @@ impl<'a> Mac<'a> {
 
         Some((start, len))
     }
+
+    pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
+        let int = self.eth.ifcr.read();
+
+        if int.mngmntdone().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
+        }
+        if int.rxcmplt().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
+            led1.set(Color::Green);
+        }
+        if int.rxoverrun().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
+            led1.set(Color::Yellow);
+        }
+        if int.txcmplt().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.txcmplt().set_bit());
+            led0.set(Color::Black);
+        }
+        if int.txunderrun().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.txunderrun().set_bit());
+            led0.set(Color::Yellow);
+        }
+
+        let int = self.eth.ifcr.read();
+        if int.bits() != 0 {
+            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
+            self.eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
+            led0.set(Color::Cyan);
+            led1.set(Color::Cyan);
+        }
+    }
 }
 
 impl<'a> mac::Mac for Mac<'a> {
@@ -368,57 +404,6 @@ impl<'a> mac::Mac for Mac<'a> {
 
         while self.eth.networkstatus.read().mandone().bit_is_clear() {}
     }
-}
-
-pub fn isr() {
-    interrupt::free(|_| {
-        let eth = unsafe { &(*efm32gg11b820::ETH::ptr()) };
-        let int = eth.ifcr.read();
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
-        let mut led0 = rgb::CommonAnodeLED::new(
-            gpio.ph10.as_output(),
-            gpio.ph11.as_output(),
-            gpio.ph12.as_output(),
-        );
-        let mut led1 = rgb::CommonAnodeLED::new(
-            gpio.ph13.as_output(),
-            gpio.ph14.as_output(),
-            gpio.ph15.as_output(),
-        );
-
-        if int.mngmntdone().bit_is_set() {
-            eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
-        }
-        if int.rxcmplt().bit_is_set() {
-            eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
-            led1.set(Color::Green);
-        }
-        if int.rxoverrun().bit_is_set() {
-            eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
-            led1.set(Color::Yellow);
-        }
-        if int.txcmplt().bit_is_set() {
-            eth.ifcr.write(|reg| reg.txcmplt().set_bit());
-            led0.set(Color::Black);
-        }
-        if int.txunderrun().bit_is_set() {
-            eth.ifcr.write(|reg| reg.txunderrun().set_bit());
-            led0.set(Color::Yellow);
-        }
-
-        let int = eth.ifcr.read();
-        if int.bits() != 0 {
-            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
-            eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
-            led0.set(Color::Cyan);
-            led1.set(Color::Cyan);
-        }
-    });
 }
 
 impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
