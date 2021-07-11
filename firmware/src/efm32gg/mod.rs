@@ -447,6 +447,19 @@ impl<'a> phy::RxToken for RxToken<'a> {
     {
         let mut data = [0; 1536];
 
+        // let len = self.descriptors.len();
+        // let end = self.end;
+
+        // (self.start..)
+        //     .map(|i| i % len)
+        //     .take_while(|i| *i != end)
+        //     .zip(data.chunks_mut(128))
+        //     .for_each(|(i, data)| {
+        //         let desc = &mut self.descriptors[i];
+        //         data.copy_from_slice(desc.as_slice());
+        //         desc.release();
+        //     });
+
         let mut orig = self.start;
         let mut dest = 0;
 
