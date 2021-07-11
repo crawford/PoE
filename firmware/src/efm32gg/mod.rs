@@ -160,7 +160,7 @@ impl<'a> Mac<'a> {
         // Clear pending interrupts
         NVIC::unpend(Interrupt::ETH);
         eth.ifcr.write(|reg| {
-            reg.mngmntdone().set_bit();
+            // reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
             reg.rxusedbitread().set_bit();
             reg.txusedbitread().set_bit();
@@ -190,7 +190,8 @@ impl<'a> Mac<'a> {
 
         // Enable interrupts
         eth.iens.write(|reg| {
-            reg.mngmntdone().set_bit();
+            // TODO: Do these operations asynchronously
+            // reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
             // TODO: What is this used for?
             //reg.rxusedbitread().set_bit();
