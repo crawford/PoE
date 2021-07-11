@@ -147,7 +147,7 @@ dependencies = [
 [[package]]
 name = "efm32gg-hal"
 version = "0.3.0"
-source = "git+https://github.com/crawford/efm32gg-hal?branch=efm32gg11b820#c49b5b2d352f99e2b673c5a23cddf5c2ef5424fc"
+source = "git+https://github.com/crawford/efm32gg-hal?branch=efm32gg11b820#a14558339e576cab2338ff7e89340ba7fd6da642"
 dependencies = [
  "cortex-m 0.7.3",
  "efm32gg11b820",
