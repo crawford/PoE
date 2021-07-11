@@ -21,8 +21,10 @@ use crate::dma::{
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
 use cortex_m::asm;
-use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
-use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
+use efm32gg11b820::{self, Interrupt, ETH, NVIC};
+use efm32gg_hal::gpio::{pins, Input, Output};
+use embedded_hal::digital::v2::OutputPin;
+use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::{self, phy, time, Error};
@@ -38,14 +40,13 @@ impl<'a, P: PHY> EFM32GG<'a, P> {
         rx_buffer: RxBuffer<'a>,
         tx_buffer: TxBuffer<'a>,
         eth: ETH,
-        cmu: &CMU,
-        gpio: &GPIO,
+        pins: Pins,
         new_phy: F,
     ) -> Result<EFM32GG<'a, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = Mac::new(rx_buffer, tx_buffer, eth, cmu, gpio);
+        let mac = Mac::new(rx_buffer, tx_buffer, eth, pins);
 
         // XXX: Wait for the PHY
         for _ in 0..1000 {
@@ -69,16 +70,27 @@ struct Mac<'a> {
     eth: ETH,
 }
 
+pub struct Pins {
+    pub rmii_rxd0: pins::PD9<Input>,
+    pub rmii_refclk: pins::PD10<Output>,
+    pub rmii_crsdv: pins::PD11<Input>,
+    pub rmii_rxer: pins::PD12<Input>,
+    pub rmii_mdio: pins::PD13<Output>,
+    pub rmii_mdc: pins::PD14<Output>,
+    pub rmii_txd0: pins::PF6<Output>,
+    pub rmii_txd1: pins::PF7<Output>,
+    pub rmii_txen: pins::PF8<Output>,
+    pub rmii_rxd1: pins::PF9<Input>,
+    pub phy_reset: pins::PH7<Output>,
+    pub phy_enable: pins::PI10<Output>,
+}
+
 impl<'a> Mac<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
-    fn new(
-        rx_buffer: RxBuffer<'a>,
-        tx_buffer: TxBuffer<'a>,
-        eth: ETH,
-        cmu: &CMU,
-        gpio: &GPIO,
-    ) -> Mac<'a> {
+    fn new(rx_buffer: RxBuffer<'a>, tx_buffer: TxBuffer<'a>, eth: ETH, mut pins: Pins) -> Mac<'a> {
+        let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
+
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
@@ -99,37 +111,11 @@ impl<'a> Mac<'a> {
             reg
         });
 
-        // TODO: Use BITSET/BITCLEAR instead
         // Hold the PHY module in reset
-        gpio.ph_model.modify(|_, reg| reg.mode7().pushpull());
-        gpio.ph_dout
-            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() & !(1 << 7)) });
+        pins.phy_reset.set_low().ignore();
 
         // Power up the PHY module
-        gpio.pi_modeh.modify(|_, reg| reg.mode10().pushpull());
-        gpio.pi_dout
-            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 10)) });
-
-        // Configure the RMII GPIOs
-        gpio.pf_model.modify(|_, reg| {
-            reg.mode6().pushpull(); // TXD1
-            reg.mode7().pushpull(); // TXD0
-            reg
-        });
-        gpio.pf_modeh.modify(|_, reg| {
-            reg.mode8().pushpull(); // TX_EN
-            reg.mode9().input(); // RXD1
-            reg
-        });
-        gpio.pd_modeh.modify(|_, reg| {
-            reg.mode9().input(); // RXD0
-            reg.mode10().pushpull(); // REFCLK
-            reg.mode11().input(); // CRS_DV
-            reg.mode12().input(); // RX_ER
-            reg.mode13().pushpull(); // MDIO
-            reg.mode14().pushpull(); // MDC
-            reg
-        });
+        pins.phy_enable.set_high().ignore();
 
         // Enable the PHY's reference clock
         cmu.routeloc0.modify(|_, reg| reg.clkout2loc().loc5());
@@ -245,8 +231,7 @@ impl<'a> Mac<'a> {
         });
 
         // Release the PHY reset
-        gpio.ph_dout
-            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 7)) });
+        pins.phy_reset.set_high().ignore();
 
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
@@ -478,17 +463,7 @@ impl<'a> phy::RxToken for RxToken<'a> {
             dest += 1;
         }
 
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
-        let mut led1 = rgb::CommonAnodeLED::new(
-            gpio.ph13.as_output(),
-            gpio.ph14.as_output(),
-            gpio.ph15.as_output(),
-        );
+        let (_, mut led1) = unsafe { crate::steal_leds() };
         led1.set(Color::Black);
 
         f(&mut data)
@@ -534,17 +509,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
                 .modify(|_, reg| reg.txstrt().set_bit());
         }
 
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
-        let mut led0 = rgb::CommonAnodeLED::new(
-            gpio.ph10.as_output(),
-            gpio.ph11.as_output(),
-            gpio.ph12.as_output(),
-        );
+        let (mut led0, _) = unsafe { crate::steal_leds() };
         led0.set(Color::Green);
 
         Ok(result)
