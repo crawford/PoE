@@ -44,7 +44,7 @@ type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH
 #[cfg(feature = "logging")]
 type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
 
-#[rtic::app(device = efm32gg11b820, peripherals = true, monotonic = rtic::cyccnt::CYCCNT)]
+#[rtic::app(device = efm32gg11b820, peripherals = true)]
 const APP: () = {
     struct Resources {
         led0: LED0,
@@ -109,8 +109,8 @@ const APP: () = {
         cx.device.RTC.ctrl.write(|reg| reg.en().set_bit());
 
         // Enable the DWT (needed by monotonic timer)
-        cx.core.DWT.enable_cycle_counter();
-        cx.core.DCB.enable_trace();
+        // cx.core.DWT.enable_cycle_counter();
+        // cx.core.DCB.enable_trace();
 
         let gpio = cx.device.GPIO.split(cx.device.CMU.constrain().split().gpio);
         let _swo = gpio.pf2.as_output();
@@ -195,7 +195,7 @@ const APP: () = {
         }
     }
 
-    #[task(resources = [led0, network, rtc], schedule = [handle_network])]
+    #[task(resources = [led0, network, rtc])]
     fn handle_network(cx: handle_network::Context) {
         log::trace!("Handling network...");
 
@@ -228,9 +228,9 @@ const APP: () = {
 
         match interface.poll_delay(sockets, timestamp) {
             Some(delay) => {
-                cx.schedule
-                    .handle_network(cx.scheduled + (delay.millis as u32 * 80_000).cycles())
-                    .unwrap();
+                // cx.schedule
+                //     .handle_network(cx.scheduled + (delay.millis as u32 * 80_000).cycles())
+                //     .unwrap();
 
                 log::trace!("Scheduled network handling in {}", delay);
             }
