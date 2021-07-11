@@ -21,7 +21,7 @@ use crate::dma::{
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
 use cortex_m::asm;
-use efm32gg11b820::{self, Interrupt, ETH, NVIC};
+use efm32gg11b820::{self, ETH};
 use efm32gg_hal::gpio::{pins, Input, Output};
 use embedded_hal::digital::v2::OutputPin;
 use ignore_result::Ignore;
@@ -158,7 +158,6 @@ impl<'a> Mac<'a> {
             .write(|reg| unsafe { reg.addr().bits(0x00_00_02_00) });
 
         // Clear pending interrupts
-        NVIC::unpend(Interrupt::ETH);
         eth.ifcr.write(|reg| {
             reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
@@ -218,9 +217,6 @@ impl<'a> Mac<'a> {
             reg.tsutimercomp().set_bit();
             reg
         });
-        unsafe {
-            NVIC::unmask(Interrupt::ETH);
-        }
 
         // Enable transmitting/receiving and the management interface
         eth.networkctrl.write(|reg| {
