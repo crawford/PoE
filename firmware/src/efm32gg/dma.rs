@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use core::cell::UnsafeCell;
-use core::fmt;
 use core::marker::PhantomData;
+use core::{fmt, slice};
 
 #[repr(align(4))]
 pub struct RxRegion(pub [u8; 1536]);
@@ -145,6 +145,10 @@ impl BufferDescriptor for RxBufferDescriptor {
 }
 
 impl RxBufferDescriptor {
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.address() as *const u8, 128) }
+    }
+
     pub fn start_of_frame(&self) -> bool {
         unsafe { (*self.status.get()) & 0x0000_4000 != 0 }
     }
@@ -276,6 +280,10 @@ impl BufferDescriptor for TxBufferDescriptor {
 }
 
 impl TxBufferDescriptor {
+    pub fn as_slice_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.address() as *mut u8, 128) }
+    }
+
     pub fn length(&self) -> usize {
         ((unsafe { *self.status.get() }) & 0x0000_3FFF) as usize
     }
