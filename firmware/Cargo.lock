@@ -232,6 +232,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignore-result"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "665ff4dce8edd10d490641ccb78949832f1ddbff02c584fb1f85ab888fe0e50c"
+
+[[package]]
 name = "indexmap"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -300,6 +306,7 @@ dependencies = [
  "efm32gg-hal",
  "efm32gg11b820",
  "embedded-hal",
+ "ignore-result",
  "led",
  "log",
  "panic-itm",
