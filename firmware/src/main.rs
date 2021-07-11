@@ -208,22 +208,22 @@ const APP: () = {
         let timestamp = Instant::from_millis(cx.resources.rtc.cnt.read().cnt().bits());
         match interface.poll(sockets, timestamp) {
             Ok(false) => log::trace!("Nothing to do"),
-            Ok(true) => {
-                log::trace!("Handling sockets...");
-
-                let mut socket = sockets.get::<TcpSocket>(*tcp_handle);
-                if !socket.is_open() {
-                    socket.listen(6969).unwrap();
-                }
-
-                if socket.can_send() {
-                    log::debug!("tcp:6969 send greeting");
-                    writeln!(socket, "hello").unwrap();
-                    log::debug!("tcp:6969 close");
-                    socket.close();
-                }
-            }
+            Ok(true) => log::trace!("Handling sockets..."),
             Err(err) => log::error!("Failed to poll network interface: {}", err),
+        }
+
+        {
+            let mut socket = sockets.get::<TcpSocket>(*tcp_handle);
+            if !socket.is_open() {
+                socket.listen(6969).unwrap();
+            }
+
+            if socket.can_send() {
+                log::debug!("tcp:6969 send greeting");
+                writeln!(socket, "hello").unwrap();
+                log::debug!("tcp:6969 close");
+                socket.close();
+            }
         }
 
         match interface.poll_delay(sockets, timestamp) {
