@@ -137,8 +137,20 @@ const APP: () = {
                 dma::RxBuffer::new(Pin::new(ETH_RX_REGION), Pin::new(ETH_RX_DESCRIPTORS)),
                 dma::TxBuffer::new(Pin::new(ETH_TX_REGION), Pin::new(ETH_TX_DESCRIPTORS)),
                 cx.device.ETH,
-                &cx.device.CMU,
-                &cx.device.GPIO,
+                efm32gg::Pins {
+                    rmii_rxd0: gpio.pd9.as_input(),
+                    rmii_refclk: gpio.pd10.as_output(),
+                    rmii_crsdv: gpio.pd11.as_input(),
+                    rmii_rxer: gpio.pd12.as_input(),
+                    rmii_mdio: gpio.pd13.as_output(),
+                    rmii_mdc: gpio.pd14.as_output(),
+                    rmii_txd0: gpio.pf6.as_output(),
+                    rmii_txd1: gpio.pf7.as_output(),
+                    rmii_txen: gpio.pf8.as_output(),
+                    rmii_rxd1: gpio.pf9.as_input(),
+                    phy_reset: gpio.ph7.as_output(),
+                    phy_enable: gpio.pi10.as_output(),
+                },
                 KSZ8091::new,
             )
             .expect("unable to create MACPHY"),
@@ -285,9 +297,15 @@ fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     }
 }
 
-unsafe fn steal_leds() -> (LED0, LED1) {
-    let gpio = (&*efm32gg11b820::GPIO::ptr())
-        .split((&*efm32gg11b820::CMU::ptr()).constrain().split().gpio);
+/// Steals the LEDs so they may be used directly.
+///
+/// # Safety
+///
+/// This overrides any existing configuration.
+pub unsafe fn steal_leds() -> (LED0, LED1) {
+    let periph = efm32gg11b820::Peripherals::steal();
+    let gpio = periph.GPIO.split(periph.CMU.constrain().split().gpio);
+
     let led0 = rgb::CommonAnodeLED::new(
         gpio.ph10.as_opendrain(),
         gpio.ph11.as_opendrain(),
