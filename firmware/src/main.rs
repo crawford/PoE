@@ -38,6 +38,9 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
+    let mut rx_region = dma::RxRegion([0; 1536]);
+    let mut tx_region = dma::TxRegion([0; 1536]);
+
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
     let eth = peripherals.ETH;
@@ -118,8 +121,6 @@ fn main() -> ! {
     let mut neighbor_cache = [None; 8];
     let mut ip_addrs = [IpCidr::new(IpAddress::v4(10, 1, 0, 3), 24)];
 
-    let mut rx_region = dma::RxRegion([0; 1536]);
-    let mut tx_region = dma::TxRegion([0; 1536]);
     let mut rx_buffer = dma::RxBuffer::new(&mut rx_region);
     let mut tx_buffer = dma::TxBuffer::new(&mut tx_region);
 
