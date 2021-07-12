@@ -14,6 +14,7 @@
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::pin::Pin;
 use core::{fmt, slice};
 
 #[repr(align(4))]
@@ -43,13 +44,16 @@ pub trait BufferDescriptor {
 }
 
 pub struct RxBuffer<'a> {
-    descriptors: &'a mut RxDescriptors,
+    descriptors: Pin<&'a mut RxDescriptors>,
     region: PhantomData<&'a mut RxRegion>,
 }
 
 impl<'a> RxBuffer<'a> {
     #[allow(clippy::identity_op, clippy::erasing_op)]
-    pub fn new(region: &'a mut RxRegion, descriptors: &'a mut RxDescriptors) -> RxBuffer<'a> {
+    pub fn new(
+        mut region: Pin<&'a mut RxRegion>,
+        mut descriptors: Pin<&'a mut RxDescriptors>,
+    ) -> RxBuffer<'a> {
         descriptors.0[0] = RxBufferDescriptor::new(&mut region.0[128 * 0..][..128]);
         descriptors.0[1] = RxBufferDescriptor::new(&mut region.0[128 * 1..][..128]);
         descriptors.0[2] = RxBufferDescriptor::new(&mut region.0[128 * 2..][..128]);
@@ -245,13 +249,16 @@ impl RxBufferDescriptor {
 }
 
 pub struct TxBuffer<'a> {
-    descriptors: &'a mut TxDescriptors,
+    descriptors: Pin<&'a mut TxDescriptors>,
     region: PhantomData<&'a mut TxRegion>,
 }
 
 impl<'a> TxBuffer<'a> {
     #[allow(clippy::identity_op, clippy::erasing_op)]
-    pub fn new(region: &'a mut TxRegion, descriptors: &'a mut TxDescriptors) -> TxBuffer<'a> {
+    pub fn new(
+        mut region: Pin<&'a mut TxRegion>,
+        mut descriptors: Pin<&'a mut TxDescriptors>,
+    ) -> TxBuffer<'a> {
         descriptors.0[0] = TxBufferDescriptor::new(&mut region.0[128 * 0..][..128]);
         descriptors.0[1] = TxBufferDescriptor::new(&mut region.0[128 * 1..][..128]);
         descriptors.0[2] = TxBufferDescriptor::new(&mut region.0[128 * 2..][..128]);

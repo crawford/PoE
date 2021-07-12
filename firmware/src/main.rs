@@ -25,6 +25,7 @@ mod phy;
 use crate::efm32gg::dma;
 use crate::ksz8091::KSZ8091;
 use core::fmt::Write;
+use core::pin::Pin;
 use cortex_m::{asm, peripheral};
 use efm32gg11b820::interrupt;
 use efm32gg_hal::cmu::CMUExt;
@@ -42,8 +43,8 @@ fn main() -> ! {
     let mut tx_region = dma::TxRegion([0; 1536]);
     let mut rx_descriptors = dma::RxDescriptors::new();
     let mut tx_descriptors = dma::TxDescriptors::new();
-    let rx_buffer = dma::RxBuffer::new(&mut rx_region, &mut rx_descriptors);
-    let tx_buffer = dma::TxBuffer::new(&mut tx_region, &mut tx_descriptors);
+    let rx_buffer = dma::RxBuffer::new(Pin::new(&mut rx_region), Pin::new(&mut rx_descriptors));
+    let tx_buffer = dma::TxBuffer::new(Pin::new(&mut tx_region), Pin::new(&mut tx_descriptors));
 
     let peripherals = efm32gg11b820::Peripherals::take().unwrap();
     let cmu = peripherals.CMU;
