@@ -20,32 +20,33 @@ use crate::dma::{
 };
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
-use core::{mem, slice};
-use cortex_m::{asm, interrupt};
-use efm32gg11b820::{self, Interrupt, CMU, ETH, GPIO, NVIC};
-use efm32gg_hal::{cmu::CMUExt, gpio::EFM32Pin, gpio::GPIOExt};
+use cortex_m::asm;
+use efm32gg11b820::{self, Interrupt, ETH, NVIC};
+use efm32gg_hal::gpio::{pins, Input, Output};
+use embedded_hal::digital::v2::OutputPin;
+use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::{self, phy, time, Error};
 
-pub struct EFM32GG<'a, 'b: 'a, P: PHY> {
-    mac: MAC<'a, 'b>,
+pub struct EFM32GG<'a, P: PHY> {
+    mac: Mac<'a>,
+    #[allow(unused)]
     phy: P,
 }
 
-impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
-    pub fn create<F>(
-        rx_buffer: &'a mut RxBuffer<'b>,
-        tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a ETH,
-        cmu: &CMU,
-        gpio: &GPIO,
+impl<'a, P: PHY> EFM32GG<'a, P> {
+    pub fn new<F>(
+        rx_buffer: RxBuffer<'a>,
+        tx_buffer: TxBuffer<'a>,
+        eth: ETH,
+        pins: Pins,
         new_phy: F,
-    ) -> Result<EFM32GG<'a, 'b, P>, &'static str>
+    ) -> Result<EFM32GG<'a, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = MAC::create(rx_buffer, tx_buffer, eth, cmu, gpio);
+        let mac = Mac::new(rx_buffer, tx_buffer, eth, pins);
 
         // XXX: Wait for the PHY
         for _ in 0..1000 {
@@ -57,24 +58,39 @@ impl<'a, 'b: 'a, P: PHY> EFM32GG<'a, 'b, P> {
 
         Ok(EFM32GG { mac, phy })
     }
+
+    pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
+        self.mac.irq(led0, led1)
+    }
 }
 
-struct MAC<'a, 'b: 'a> {
-    rx_buffer: &'a mut RxBuffer<'b>,
-    tx_buffer: &'a mut TxBuffer<'b>,
-    eth: &'a ETH,
+struct Mac<'a> {
+    rx_buffer: RxBuffer<'a>,
+    tx_buffer: TxBuffer<'a>,
+    eth: ETH,
 }
 
-impl<'a, 'b: 'a> MAC<'a, 'b> {
+pub struct Pins {
+    pub rmii_rxd0: pins::PD9<Input>,
+    pub rmii_refclk: pins::PD10<Output>,
+    pub rmii_crsdv: pins::PD11<Input>,
+    pub rmii_rxer: pins::PD12<Input>,
+    pub rmii_mdio: pins::PD13<Output>,
+    pub rmii_mdc: pins::PD14<Output>,
+    pub rmii_txd0: pins::PF6<Output>,
+    pub rmii_txd1: pins::PF7<Output>,
+    pub rmii_txen: pins::PF8<Output>,
+    pub rmii_rxd1: pins::PF9<Input>,
+    pub phy_reset: pins::PH7<Output>,
+    pub phy_enable: pins::PI10<Output>,
+}
+
+impl<'a> Mac<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
-    fn create(
-        rx_buffer: &'a mut RxBuffer<'b>,
-        tx_buffer: &'a mut TxBuffer<'b>,
-        eth: &'a ETH,
-        cmu: &CMU,
-        gpio: &GPIO,
-    ) -> MAC<'a, 'b> {
+    fn new(rx_buffer: RxBuffer<'a>, tx_buffer: TxBuffer<'a>, eth: ETH, mut pins: Pins) -> Mac<'a> {
+        let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
+
         // Enable the HFPER clock and source CLKOUT2 from HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
@@ -95,37 +111,11 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
             reg
         });
 
-        // TODO: Use BITSET/BITCLEAR instead
         // Hold the PHY module in reset
-        gpio.ph_model.modify(|_, reg| reg.mode7().pushpull());
-        gpio.ph_dout
-            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() & !(1 << 7)) });
+        pins.phy_reset.set_low().ignore();
 
         // Power up the PHY module
-        gpio.pi_modeh.modify(|_, reg| reg.mode10().pushpull());
-        gpio.pi_dout
-            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 10)) });
-
-        // Configure the RMII GPIOs
-        gpio.pf_model.modify(|_, reg| {
-            reg.mode6().pushpull(); // TXD1
-            reg.mode7().pushpull(); // TXD0
-            reg
-        });
-        gpio.pf_modeh.modify(|_, reg| {
-            reg.mode8().pushpull(); // TX_EN
-            reg.mode9().input(); // RXD1
-            reg
-        });
-        gpio.pd_modeh.modify(|_, reg| {
-            reg.mode9().input(); // RXD0
-            reg.mode10().pushpull(); // REFCLK
-            reg.mode11().input(); // CRS_DV
-            reg.mode12().input(); // RX_ER
-            reg.mode13().pushpull(); // MDIO
-            reg.mode14().pushpull(); // MDC
-            reg
-        });
+        pins.phy_enable.set_high().ignore();
 
         // Enable the PHY's reference clock
         cmu.routeloc0.modify(|_, reg| reg.clkout2loc().loc5());
@@ -170,7 +160,7 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         // Clear pending interrupts
         NVIC::unpend(Interrupt::ETH);
         eth.ifcr.write(|reg| {
-            reg.mngmntdone().set_bit();
+            // reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
             reg.rxusedbitread().set_bit();
             reg.txusedbitread().set_bit();
@@ -200,7 +190,8 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
 
         // Enable interrupts
         eth.iens.write(|reg| {
-            reg.mngmntdone().set_bit();
+            // TODO: Do these operations asynchronously
+            // reg.mngmntdone().set_bit();
             reg.rxcmplt().set_bit();
             // TODO: What is this used for?
             //reg.rxusedbitread().set_bit();
@@ -241,13 +232,12 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
         });
 
         // Release the PHY reset
-        gpio.ph_dout
-            .modify(|read, write| unsafe { write.dout().bits(read.dout().bits() | (1 << 7)) });
+        pins.phy_reset.set_high().ignore();
 
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
 
-        MAC {
+        Mac {
             rx_buffer,
             tx_buffer,
             eth,
@@ -289,15 +279,9 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
     }
 
     fn find_tx_window(&mut self) -> Option<(usize, usize)> {
-        let queue_ptr = (unsafe {
-            (*efm32gg11b820::ETH::ptr())
-                .txqptr
-                .read()
-                .dmatxqptr()
-                .bits()
-                << 2
-        } - self.tx_buffer.address() as u32) as usize
-            / mem::size_of::<TxBufferDescriptor>();
+        let queue_ptr = (unsafe { (*ETH::ptr()).txqptr.read().dmatxqptr().bits() << 2 }
+            - self.tx_buffer.address() as u32) as usize
+            / core::mem::size_of::<TxBufferDescriptor>();
         let descriptors = self.tx_buffer.descriptors_mut();
 
         // Walk forward from the queue pointer (wrapping around to the beginning of the buffer if
@@ -338,9 +322,41 @@ impl<'a, 'b: 'a> MAC<'a, 'b> {
 
         Some((start, len))
     }
+
+    pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
+        let int = self.eth.ifcr.read();
+
+        if int.mngmntdone().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
+        }
+        if int.rxcmplt().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
+            led1.set(Color::Green);
+        }
+        if int.rxoverrun().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
+            led1.set(Color::Yellow);
+        }
+        if int.txcmplt().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.txcmplt().set_bit());
+            led0.set(Color::Black);
+        }
+        if int.txunderrun().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.txunderrun().set_bit());
+            led0.set(Color::Yellow);
+        }
+
+        let int = self.eth.ifcr.read();
+        if int.bits() != 0 {
+            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
+            self.eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
+            led0.set(Color::Cyan);
+            led1.set(Color::Cyan);
+        }
+    }
 }
 
-impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
+impl<'a> mac::Mac for Mac<'a> {
     fn mdio_read(&self, address: u8, register: Register) -> u16 {
         self.eth.phymngmnt.write(|reg| {
             unsafe { reg.phyaddr().bits(address) };
@@ -376,58 +392,7 @@ impl<'a, 'b> mac::MAC for MAC<'a, 'b> {
     }
 }
 
-pub fn isr() {
-    interrupt::free(|_| {
-        let eth = unsafe { &(*efm32gg11b820::ETH::ptr()) };
-        let int = eth.ifcr.read();
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
-        let mut led0 = rgb::CommonAnodeLED::new(
-            gpio.ph10.as_output(),
-            gpio.ph11.as_output(),
-            gpio.ph12.as_output(),
-        );
-        let mut led1 = rgb::CommonAnodeLED::new(
-            gpio.ph13.as_output(),
-            gpio.ph14.as_output(),
-            gpio.ph15.as_output(),
-        );
-
-        if int.mngmntdone().bit_is_set() {
-            eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
-        }
-        if int.rxcmplt().bit_is_set() {
-            eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
-            led1.set(Color::Green);
-        }
-        if int.rxoverrun().bit_is_set() {
-            eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
-            led1.set(Color::Yellow);
-        }
-        if int.txcmplt().bit_is_set() {
-            eth.ifcr.write(|reg| reg.txcmplt().set_bit());
-            led0.set(Color::Black);
-        }
-        if int.txunderrun().bit_is_set() {
-            eth.ifcr.write(|reg| reg.txunderrun().set_bit());
-            led0.set(Color::Yellow);
-        }
-
-        let int = eth.ifcr.read();
-        if int.bits() != 0 {
-            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
-            eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
-            led0.set(Color::Cyan);
-            led1.set(Color::Cyan);
-        }
-    });
-}
-
-impl<'a, 'b, 'c: 'b, P: PHY> phy::Device<'a> for EFM32GG<'b, 'c, P> {
+impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
     type RxToken = RxToken<'a>;
     type TxToken = TxToken<'a>;
 
@@ -485,14 +450,11 @@ impl<'a> phy::RxToken for RxToken<'a> {
 
         let mut orig = self.start;
         let mut dest = 0;
+
         loop {
-            {
-                let d = &mut self.descriptors[orig];
-                data[(dest * 128)..][..128].copy_from_slice(unsafe {
-                    slice::from_raw_parts(d.address() as *const u8, 128)
-                });
-                d.release();
-            }
+            let d = &mut self.descriptors[orig];
+            data[(dest * 128)..][..128].copy_from_slice(d.as_slice());
+            d.release();
 
             if orig == self.end {
                 break;
@@ -502,17 +464,7 @@ impl<'a> phy::RxToken for RxToken<'a> {
             dest += 1;
         }
 
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
-        let mut led1 = rgb::CommonAnodeLED::new(
-            gpio.ph13.as_output(),
-            gpio.ph14.as_output(),
-            gpio.ph15.as_output(),
-        );
+        let (_, mut led1) = unsafe { crate::steal_leds() };
         led1.set(Color::Black);
 
         f(&mut data)
@@ -542,8 +494,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
 
         for i in 0..=last_buffer {
             let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
-            unsafe { slice::from_raw_parts_mut(d.address() as *mut u8, 128) }
-                .copy_from_slice(&data[(i * 128)..][..128]);
+            d.as_slice_mut().copy_from_slice(&data[(i * 128)..][..128]);
             if i == 0 {
                 d.set_length(len);
             }
@@ -559,17 +510,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
                 .modify(|_, reg| reg.txstrt().set_bit());
         }
 
-        let gpio = (unsafe { &*efm32gg11b820::GPIO::ptr() }).split(
-            (unsafe { &*efm32gg11b820::CMU::ptr() })
-                .constrain()
-                .split()
-                .gpio,
-        );
-        let mut led0 = rgb::CommonAnodeLED::new(
-            gpio.ph10.as_output(),
-            gpio.ph11.as_output(),
-            gpio.ph12.as_output(),
-        );
+        let (mut led0, _) = unsafe { crate::steal_leds() };
         led0.set(Color::Green);
 
         Ok(result)
