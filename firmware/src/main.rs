@@ -230,8 +230,8 @@ const APP: () = {
 
         if let Some(delay) = interface.poll_delay(sockets, timestamp) {
             cx.schedule
-                // TODO: 80_000 cycles shouldn't be hard-coded (I'm not sure if it's right either)
-                .handle_network(cx.scheduled + (delay.millis as u32 * 80_000).cycles())
+                // TODO: 50_000 cycles shouldn't be hard-coded
+                .handle_network(cx.scheduled + (delay.millis as u32 * 50_000).cycles())
                 .ignore();
 
             log::trace!("Scheduled network handling in {}", delay);
