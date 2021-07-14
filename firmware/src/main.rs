@@ -43,6 +43,8 @@ type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH
 
 #[cfg(feature = "logging")]
 type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
+#[cfg(not(feature = "logging"))]
+type Logger = ();
 
 #[rtic::app(device = efm32gg11b820, peripherals = true, monotonic = rtic::cyccnt::CYCCNT)]
 const APP: () = {
@@ -55,7 +57,7 @@ const APP: () = {
         rtc: efm32gg11b820::RTC,
     }
 
-    #[init]
+    #[init(spawn = [logger_init])]
     fn init(mut cx: init::Context) -> init::LateResources {
         static mut ETH_RX_REGION: dma::RxRegion = dma::RxRegion([0; 1536]);
         static mut ETH_TX_REGION: dma::TxRegion = dma::TxRegion([0; 1536]);
@@ -132,6 +134,21 @@ const APP: () = {
         led0.set(Color::Black);
         led1.set(Color::Black);
 
+        #[cfg(feature = "logging")]
+        let logger = {
+            use cortex_m_log::destination::Itm;
+            use cortex_m_log::printer::itm::InterruptSync;
+
+            let logger = Logger {
+                inner: InterruptSync::new(Itm::new(cx.core.ITM)),
+                level: log::LevelFilter::Debug,
+            };
+
+            cx.spawn.logger_init().unwrap();
+
+            logger
+        };
+
         let interface = InterfaceBuilder::new(
             efm32gg::EFM32GG::new(
                 dma::RxBuffer::new(Pin::new(ETH_RX_REGION), Pin::new(ETH_RX_DESCRIPTORS)),
@@ -160,23 +177,6 @@ const APP: () = {
         .ip_addrs(IP_ADDRESSES.as_mut())
         .finalize();
 
-        #[cfg(feature = "logging")]
-        let logger = {
-            use cortex_m_log::destination::Itm;
-            use cortex_m_log::log::trick_init;
-            use cortex_m_log::printer::itm::InterruptSync;
-
-            let logger = Logger {
-                inner: InterruptSync::new(Itm::new(cx.core.ITM)),
-                level: log::LevelFilter::Debug,
-            };
-
-            unsafe { trick_init(&logger) }.unwrap();
-            log::debug!("Logger online!");
-
-            logger
-        };
-
         let mut sockets = SocketSet::new(SOCKETS.as_mut());
         let tcp_handle = sockets.add(TcpSocket::new(
             TcpSocketBuffer::new(TCP_RX_PAYLOAD.as_mut()),
@@ -195,6 +195,15 @@ const APP: () = {
             },
             rtc: cx.device.RTC,
         }
+    }
+
+    #[cfg(feature = "logging")]
+    #[task(resources = [logger])]
+    fn logger_init(cx: logger_init::Context) {
+        // This happens in a separate task from idle so that the logger object is in its final
+        // memory location before it is registered.
+        unsafe { cortex_m_log::log::trick_init(cx.resources.logger) }.unwrap();
+        log::debug!("Logger online!");
     }
 
     #[task(resources = [network, rtc], schedule = [handle_network])]
