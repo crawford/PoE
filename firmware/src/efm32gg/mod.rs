@@ -14,13 +14,13 @@
 
 pub mod dma;
 
-use crate::dma::{
-    BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
-    TxBufferDescriptor,
-};
 use crate::mac;
 use crate::phy::{probe_for_phy, Register, PHY};
 use cortex_m::asm;
+use dma::{
+    BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
+    TxBufferDescriptor,
+};
 use efm32gg11b820::{self, Interrupt, ETH, NVIC};
 use efm32gg_hal::gpio::{pins, Input, Output};
 use embedded_hal::digital::v2::OutputPin;
