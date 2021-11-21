@@ -14,11 +14,9 @@
 
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
-use smoltcp::iface::Interface;
-use smoltcp::socket::{SocketHandle, SocketSet};
+use smoltcp::iface::{Interface,SocketHandle};
 
 pub struct Resources {
     pub interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
-    pub sockets: SocketSet<'static>,
     pub tcp_handle: SocketHandle,
 }

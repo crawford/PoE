@@ -33,8 +33,8 @@ use led::rgb::{self, Color};
 use led::LED;
 use panic_itm as _;
 use rtic::cyccnt::U32Ext;
-use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache};
-use smoltcp::socket::{SocketSet, SocketSetItem, TcpSocket, TcpSocketBuffer};
+use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, SocketStorage};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
 
@@ -67,7 +67,7 @@ const APP: () = {
         static mut TCP_TX_PAYLOAD: [u8; 128] = [0; 128];
 
         static mut NEIGHBORS: [Option<(IpAddress, Neighbor)>; 8] = [None; 8];
-        static mut SOCKETS: [Option<SocketSetItem<'static>>; 1] = [None; 1];
+        static mut SOCKETS: [SocketStorage<'static>; 1] = [SocketStorage::EMPTY; 1];
         static mut IP_ADDRESSES: [IpCidr; 1] = [IpCidr::Ipv4(Ipv4Cidr::new(
             Ipv4Address::new(192, 168, 0, 3),
             24,
@@ -116,6 +116,23 @@ const APP: () = {
         cx.core.DWT.enable_cycle_counter();
         cx.core.DCB.enable_trace();
 
+        // Enable the TRNG and generate a random seed
+        let seed = {
+            let cmu = &cx.device.CMU;
+            let trng = &cx.device.TRNG0;
+
+            cmu.hfperclken0.modify(|_, reg| reg.trng0().set_bit());
+            trng.control.modify(|_, reg| reg.enable().set_bit());
+
+            while trng.fifolevel.read().bits() < 2 {}
+            let seed =
+                u64::from(trng.fifo.read().bits()) << 32 | u64::from(trng.fifo.read().bits());
+
+            trng.control.modify(|_, reg| reg.enable().clear_bit());
+
+            seed
+        };
+
         let gpio = cx.device.GPIO.split(cx.device.CMU.constrain().split().gpio);
         let _swo = gpio.pf2.as_output();
 
@@ -149,7 +166,7 @@ const APP: () = {
             logger
         };
 
-        let interface = InterfaceBuilder::new(
+        let mut interface = InterfaceBuilder::new(
             efm32gg::EFM32GG::new(
                 dma::RxBuffer::new(Pin::new(ETH_RX_REGION), Pin::new(ETH_RX_DESCRIPTORS)),
                 dma::TxBuffer::new(Pin::new(ETH_TX_REGION), Pin::new(ETH_TX_DESCRIPTORS)),
@@ -171,14 +188,15 @@ const APP: () = {
                 KSZ8091::new,
             )
             .expect("unable to create MACPHY"),
+            SOCKETS.as_mut(),
         )
-        .ethernet_addr(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]))
+        .hardware_addr(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]).into())
         .neighbor_cache(NeighborCache::new(NEIGHBORS.as_mut()))
         .ip_addrs(IP_ADDRESSES.as_mut())
+        .random_seed(seed)
         .finalize();
 
-        let mut sockets = SocketSet::new(SOCKETS.as_mut());
-        let tcp_handle = sockets.add(TcpSocket::new(
+        let tcp_handle = interface.add_socket(TcpSocket::new(
             TcpSocketBuffer::new(TCP_RX_PAYLOAD.as_mut()),
             TcpSocketBuffer::new(TCP_TX_PAYLOAD.as_mut()),
         ));
@@ -190,7 +208,6 @@ const APP: () = {
             logger,
             network: network::Resources {
                 interface,
-                sockets,
                 tcp_handle,
             },
             rtc: cx.device.RTC,
@@ -212,17 +229,16 @@ const APP: () = {
 
         let network::Resources {
             interface,
-            sockets,
             tcp_handle,
         } = cx.resources.network;
 
         let timestamp = Instant::from_millis(cx.resources.rtc.cnt.read().cnt().bits());
-        match interface.poll(sockets, timestamp) {
+        match interface.poll(timestamp) {
             Ok(false) => log::trace!("Nothing to do"),
             Ok(true) => {
                 log::trace!("Handling sockets...");
 
-                let mut socket = sockets.get::<TcpSocket>(*tcp_handle);
+                let socket = interface.get_socket::<TcpSocket>(*tcp_handle);
                 if !socket.is_open() {
                     socket.listen(6969).unwrap();
                 }
@@ -237,10 +253,10 @@ const APP: () = {
             Err(err) => log::error!("Failed to poll network interface: {}", err),
         }
 
-        if let Some(delay) = interface.poll_delay(sockets, timestamp) {
+        if let Some(delay) = interface.poll_delay(timestamp) {
             cx.schedule
                 // TODO: 50_000 cycles shouldn't be hard-coded
-                .handle_network(cx.scheduled + (delay.millis as u32 * 50_000).cycles())
+                .handle_network(cx.scheduled + (delay.total_millis() as u32 * 50_000).cycles())
                 .ignore();
 
             log::trace!("Scheduled network handling in {}", delay);

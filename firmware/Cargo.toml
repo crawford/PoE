@@ -16,7 +16,7 @@ ignore-result = "0.2.0"
 led = "0.2.0"
 log = "0.4.8"
 panic-itm = "0.4.1"
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", default-features = false, features = [ "socket-dhcpv4", "socket-tcp" ] }
+smoltcp = { version = "0.8.0", default-features = false, features = [ "socket-dhcpv4", "socket-tcp" ] }
 
 [profile.dev]
 opt-level = "s"
