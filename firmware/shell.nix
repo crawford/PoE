@@ -1,15 +1,25 @@
+let
+  rev = "7c1e8b1dd6ed0043fb4ee0b12b815256b0b9de6f";
+in
 with import <nixpkgs> {
-  overlays = [ (import (builtins.fetchTarball https://github.com/mozilla/nixpkgs-mozilla/archive/master.tar.gz)) ];
+  overlays = [ (import (builtins.fetchTarball "https://github.com/mozilla/nixpkgs-mozilla/archive/${rev}.tar.gz")) ];
 };
 
-stdenv.mkDerivation {
-  name = "poe";
+let
+  rust = (rustChannels.stable.rust.override {
+    targets = [ "thumbv7m-none-eabi" ];
+    extensions = [
+      "clippy-preview"
+      "llvm-tools-preview"
+      "rustfmt-preview"
+      "rust-std"
+    ];
+  });
+in
+mkShell {
   buildInputs = [
-    (rustChannels.stable.rust.override {
-      targets = [ "thumbv7m-none-eabi" ];
-      extensions = [ "rust-std" "rustfmt-preview" "clippy-preview" ];
-    })
-    gcc-arm-embedded
+    rust
+    sccache
   ];
-  shellHook = "export CC_thumbv7m_none_eabi=arm-none-eabi-gcc";
+  shellHook = "export RUSTC_WRAPPER=sccache";
 }
