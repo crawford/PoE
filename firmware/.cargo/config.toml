@@ -2,7 +2,7 @@
 target = "thumbv7m-none-eabi"
 
 [target.thumbv7m-none-eabi]
-runner = "./flash.sh"
+runner = "./flash.sh --remain"
 rustflags = [
 	"--codegen", "link-arg=-Tlink.x",
 ]
