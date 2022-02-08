@@ -21,58 +21,75 @@ mod mac;
 mod network;
 mod phy;
 
-use crate::efm32gg::dma;
-use crate::ksz8091::KSZ8091;
-use core::fmt::Write;
-use core::pin::Pin;
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
-use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use led::LED;
 use panic_itm as _;
-use rtic::cyccnt::U32Ext;
-use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, SocketStorage};
-use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
 
 type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
 type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
 
-#[cfg(feature = "logging")]
-type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
-#[cfg(not(feature = "logging"))]
-type Logger = ();
+#[rtic::app(
+    dispatchers = [ CAN0, CAN1 ],
+    device = efm32gg11b820,
+    peripherals = true,
+)]
+mod app {
+    use crate::efm32gg::{self, dma};
+    use crate::ksz8091::KSZ8091;
+    use crate::network;
 
-#[rtic::app(device = efm32gg11b820, peripherals = true, monotonic = rtic::cyccnt::CYCCNT)]
-const APP: () = {
-    struct Resources {
-        led0: LED0,
-        led1: LED1,
-        #[cfg(feature = "logging")]
-        logger: Logger,
+    use core::pin::Pin;
+    use cortex_m::interrupt;
+    use efm32gg_hal::cmu::CMUExt;
+    use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
+    use ignore_result::Ignore;
+    use led::rgb::{self, Color};
+    use led::LED;
+    use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, SocketStorage};
+    use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+    use smoltcp::time::Instant;
+    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
+
+    #[monotonic(binds = SysTick, default = true)]
+    type Monotonic = dwt_systick_monotonic::DwtSystick<50_000_000>; // 50 MHz
+
+    #[shared]
+    struct SharedResources {
+        led0: crate::LED0,
+        led1: crate::LED1,
         network: network::Resources,
         rtc: efm32gg11b820::RTC,
     }
 
-    #[init(spawn = [logger_init])]
-    fn init(mut cx: init::Context) -> init::LateResources {
-        static mut ETH_RX_REGION: dma::RxRegion = dma::RxRegion([0; 1536]);
-        static mut ETH_TX_REGION: dma::TxRegion = dma::TxRegion([0; 1536]);
-        static mut ETH_RX_DESCRIPTORS: dma::RxDescriptors = dma::RxDescriptors::new();
-        static mut ETH_TX_DESCRIPTORS: dma::TxDescriptors = dma::TxDescriptors::new();
-        static mut TCP_RX_PAYLOAD: [u8; 128] = [0; 128];
-        static mut TCP_TX_PAYLOAD: [u8; 128] = [0; 128];
+    #[local]
+    struct LocalResources {}
 
-        static mut NEIGHBORS: [Option<(IpAddress, Neighbor)>; 8] = [None; 8];
-        static mut SOCKETS: [SocketStorage<'static>; 1] = [SocketStorage::EMPTY; 1];
-        static mut IP_ADDRESSES: [IpCidr; 1] = [IpCidr::Ipv4(Ipv4Cidr::new(
-            Ipv4Address::new(192, 168, 0, 3),
-            24,
-        ))];
+    #[cfg(feature = "logging")]
+    type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
+    #[cfg(feature = "logging")]
+    static mut LOGGER: core::mem::MaybeUninit<Logger> = core::mem::MaybeUninit::uninit();
 
+    #[init(
+        local = [
+             eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
+             eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
+             eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
+             eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
+             tcp_rx_payload: [u8; 128] = [0; 128],
+             tcp_tx_payload: [u8; 128] = [0; 128],
+
+             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
+             sockets: [SocketStorage<'static>; 1] = [SocketStorage::EMPTY; 1],
+             ip_addresses: [IpCidr; 1] = [IpCidr::Ipv4(Ipv4Cidr::new(
+                Ipv4Address::new(192, 168, 0, 3),
+                24,
+            ))],
+        ]
+    )]
+    fn init(mut cx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
         // Enable the HFXO
         cx.device.CMU.oscencmd.write(|reg| reg.hfxoen().set_bit());
         // Wait for HFX0 to stabilize
@@ -112,10 +129,6 @@ const APP: () = {
         cx.device.CMU.lfaclken0.write(|reg| reg.rtc().set_bit());
         cx.device.RTC.ctrl.write(|reg| reg.en().set_bit());
 
-        // Enable the DWT (needed by monotonic timer)
-        cx.core.DWT.enable_cycle_counter();
-        cx.core.DCB.enable_trace();
-
         // Enable the TRNG and generate a random seed
         let seed = {
             let cmu = &cx.device.CMU;
@@ -152,7 +165,7 @@ const APP: () = {
         led1.set(Color::Black);
 
         #[cfg(feature = "logging")]
-        let logger = {
+        {
             use cortex_m_log::destination::Itm;
             use cortex_m_log::printer::itm::InterruptSync;
 
@@ -161,15 +174,24 @@ const APP: () = {
                 level: log::LevelFilter::Debug,
             };
 
-            cx.spawn.logger_init().unwrap();
+            unsafe {
+                LOGGER = core::mem::MaybeUninit::new(logger);
+                cortex_m_log::log::trick_init(LOGGER.assume_init_ref()).unwrap();
+            }
 
-            logger
+            log::debug!("Logger online!");
         };
 
         let mut interface = InterfaceBuilder::new(
             efm32gg::EFM32GG::new(
-                dma::RxBuffer::new(Pin::new(ETH_RX_REGION), Pin::new(ETH_RX_DESCRIPTORS)),
-                dma::TxBuffer::new(Pin::new(ETH_TX_REGION), Pin::new(ETH_TX_DESCRIPTORS)),
+                dma::RxBuffer::new(
+                    Pin::new(cx.local.eth_rx_region),
+                    Pin::new(cx.local.eth_rx_descriptors),
+                ),
+                dma::TxBuffer::new(
+                    Pin::new(cx.local.eth_tx_region),
+                    Pin::new(cx.local.eth_tx_descriptors),
+                ),
                 cx.device.ETH,
                 efm32gg::Pins {
                     rmii_rxd0: gpio.pd9.as_input(),
@@ -188,102 +210,91 @@ const APP: () = {
                 KSZ8091::new,
             )
             .expect("unable to create MACPHY"),
-            SOCKETS.as_mut(),
+            cx.local.sockets.as_mut(),
         )
         .hardware_addr(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]).into())
-        .neighbor_cache(NeighborCache::new(NEIGHBORS.as_mut()))
-        .ip_addrs(IP_ADDRESSES.as_mut())
+        .neighbor_cache(NeighborCache::new(cx.local.neighbors.as_mut()))
+        .ip_addrs(cx.local.ip_addresses.as_mut())
         .random_seed(seed)
         .finalize();
 
         let tcp_handle = interface.add_socket(TcpSocket::new(
-            TcpSocketBuffer::new(TCP_RX_PAYLOAD.as_mut()),
-            TcpSocketBuffer::new(TCP_TX_PAYLOAD.as_mut()),
+            TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
 
-        init::LateResources {
-            led0,
-            led1,
-            #[cfg(feature = "logging")]
-            logger,
-            network: network::Resources {
-                interface,
-                tcp_handle,
+        handle_network::spawn().unwrap();
+
+        (
+            SharedResources {
+                led0,
+                led1,
+                network: network::Resources {
+                    interface,
+                    tcp_handle,
+                },
+                rtc: cx.device.RTC,
             },
-            rtc: cx.device.RTC,
-        }
+            LocalResources {},
+            init::Monotonics(Monotonic::new(
+                &mut cx.core.DCB,
+                cx.core.DWT,
+                cx.core.SYST,
+                50_000_000,
+            )),
+        )
     }
 
-    #[cfg(feature = "logging")]
-    #[task(resources = [logger])]
-    fn logger_init(cx: logger_init::Context) {
-        // This happens in a separate task from idle so that the logger object is in its final
-        // memory location before it is registered.
-        unsafe { cortex_m_log::log::trick_init(cx.resources.logger) }.unwrap();
-        log::debug!("Logger online!");
-    }
-
-    #[task(resources = [network, rtc], schedule = [handle_network])]
-    fn handle_network(cx: handle_network::Context) {
+    #[task(shared = [network, rtc])]
+    fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
-        let network::Resources {
-            interface,
-            tcp_handle,
-        } = cx.resources.network;
+        let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
+        let mut network = cx.shared.network;
 
-        let timestamp = Instant::from_millis(cx.resources.rtc.cnt.read().cnt().bits());
-        match interface.poll(timestamp) {
-            Ok(false) => log::trace!("Nothing to do"),
+        match network.lock(|network| network.interface.poll(timestamp)) {
             Ok(true) => {
                 log::trace!("Handling sockets...");
 
-                let socket = interface.get_socket::<TcpSocket>(*tcp_handle);
-                if !socket.is_open() {
-                    socket.listen(6969).unwrap();
-                }
-
-                if socket.can_send() {
-                    log::debug!("tcp:6969 send greeting");
-                    writeln!(socket, "hello").unwrap();
-                    log::debug!("tcp:6969 close");
-                    socket.close();
-                }
+                network.lock(|network| network.handle_sockets());
             }
+            Ok(false) => log::trace!("Nothing to do"),
             Err(err) => log::error!("Failed to poll network interface: {}", err),
         }
 
-        if let Some(delay) = interface.poll_delay(timestamp) {
-            cx.schedule
-                // TODO: 50_000 cycles shouldn't be hard-coded
-                .handle_network(cx.scheduled + (delay.total_millis() as u32 * 50_000).cycles())
-                .ignore();
+        if let Some(delay) = network.lock(|network| network.interface.poll_delay(timestamp)) {
+            use dwt_systick_monotonic::fugit::ExtU32;
+            handle_network::spawn_after((delay.total_millis() as u32).millis()).ignore();
 
             log::trace!("Scheduled network handling in {}", delay);
         }
+
         log::trace!("Finished handling network");
     }
 
-    #[task(binds = ETH, resources = [network, led0, led1], spawn = [handle_network])]
+    #[task(binds = ETH, shared = [network, led0, led1])]
     fn eth_irq(cx: eth_irq::Context) {
-        let eth_irq::Resources {
-            led0,
-            led1,
-            network,
-        } = cx.resources;
+        let eth_irq::SharedResources {
+            mut network,
+            mut led0,
+            mut led1,
+        } = cx.shared;
 
         log::trace!("Interrupt - ETH");
 
-        interrupt::free(|_| network.interface.device_mut().irq(led0, led1));
+        interrupt::free(|_| {
+            network.lock(|network| {
+                led0.lock(|led0| {
+                    led1.lock(|led1| {
+                        network.interface.device_mut().irq(led0, led1);
+                    })
+                })
+            })
+        });
 
-        cx.spawn.handle_network().ignore();
+        handle_network::spawn().ignore();
     }
-
-    extern "C" {
-        fn CAN0();
-        fn CAN1();
-    }
-};
+}
 
 // Light up both LEDs red, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
