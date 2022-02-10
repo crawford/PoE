@@ -14,9 +14,32 @@
 
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
-use smoltcp::iface::{Interface,SocketHandle};
+
+use core::fmt::Write;
+use smoltcp::iface::{Interface, SocketHandle};
+use smoltcp::socket::TcpSocket;
 
 pub struct Resources {
     pub interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
     pub tcp_handle: SocketHandle,
+}
+
+impl Resources {
+    pub fn handle_sockets(&mut self) {
+        self.handle_tcp();
+    }
+
+    fn handle_tcp(&mut self) {
+        let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
+        if !socket.is_open() {
+            socket.listen(6969).unwrap();
+        }
+
+        if socket.can_send() {
+            log::debug!("tcp:6969 send greeting");
+            writeln!(socket, "hello").unwrap();
+            log::debug!("tcp:6969 close");
+            socket.close();
+        }
+    }
 }
