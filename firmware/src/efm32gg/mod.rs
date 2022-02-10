@@ -16,6 +16,7 @@ pub mod dma;
 
 use crate::mac;
 use crate::phy::{probe_for_phy, Phy, Register};
+use core::cmp;
 use dma::{
     BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
     TxBufferDescriptor,
@@ -510,13 +511,11 @@ impl<'a> phy::TxToken for TxToken<'a> {
 
         for i in 0..=last_buffer {
             let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
+            let buffer_len = cmp::min(128, len - i * 128);
+
             d.as_slice_mut().copy_from_slice(&data[(i * 128)..][..128]);
-            if i == 0 {
-                d.set_length(len);
-            }
-            if i == last_buffer {
-                d.set_last_buffer(true);
-            }
+            d.set_length(buffer_len);
+            d.set_last_buffer(i == last_buffer);
             d.release();
         }
 
