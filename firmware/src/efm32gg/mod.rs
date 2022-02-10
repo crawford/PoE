@@ -336,6 +336,7 @@ impl<'a> Mac<'a> {
         if int.rxoverrun().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
             led1.set(Color::Yellow);
+            log::error!("RX Overrun Interrupt");
         }
         if int.txcmplt().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.txcmplt().set_bit());
@@ -344,6 +345,12 @@ impl<'a> Mac<'a> {
         if int.txunderrun().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.txunderrun().set_bit());
             led0.set(Color::Yellow);
+            log::error!("TX Underrun Interrupt");
+        }
+        if int.ambaerr().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.ambaerr().set_bit());
+            led0.set(Color::Yellow);
+            log::error!("TX AMBA Error Interrupt");
         }
 
         let int = self.eth.ifcr.read();
@@ -484,6 +491,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
         if len > (self.length * 128) {
+            log::warn!("TX exhausted: buffer={} token={}", len, self.length * 128);
             return Err(Error::Exhausted);
         }
 

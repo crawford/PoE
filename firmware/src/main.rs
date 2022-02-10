@@ -173,7 +173,7 @@ mod app {
 
             let logger = Logger {
                 inner: InterruptSync::new(Itm::new(cx.core.ITM)),
-                level: log::LevelFilter::Debug,
+                level: log::LevelFilter::Info,
             };
 
             unsafe {
@@ -181,7 +181,7 @@ mod app {
                 cortex_m_log::log::trick_init(LOGGER.assume_init_ref()).unwrap();
             }
 
-            log::debug!("Logger online!");
+            log::info!("Logger online!");
         };
 
         let mut interface = InterfaceBuilder::new(
@@ -278,7 +278,7 @@ mod app {
                 });
         }
 
-        log::trace!("Finished handling network");
+        log::trace!("Handled sockets: {}", timestamp);
     }
 
     #[task(binds = ETH, shared = [network, led0, led1])]
@@ -288,8 +288,6 @@ mod app {
             mut led0,
             mut led1,
         } = cx.shared;
-
-        log::trace!("Interrupt - ETH");
 
         interrupt::free(|_| {
             network.lock(|network| {

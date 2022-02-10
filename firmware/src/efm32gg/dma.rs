@@ -17,6 +17,14 @@ use core::marker::PhantomData;
 use core::pin::Pin;
 use core::{fmt, slice};
 
+macro_rules! test_status_bit_fn {
+    ($vis:vis $name:ident, $pos:literal) => {
+        $vis fn $name(&self) -> bool {
+            (unsafe { *self.status.get() } & (1 << $pos)) != 0
+        }
+    };
+}
+
 #[repr(align(4))]
 pub struct RxRegion(pub [u8; 1536]);
 #[repr(align(4))]
@@ -34,6 +42,45 @@ pub enum BufferDescriptorListWrap {
     Wrap,
 }
 
+/// Transmit IP/TCP/UDP checksum generation offload errors
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TxChecksumGenerationError {
+    /// The Packet was identified as a VLAN type, but the header was not fully complete, or had an
+    /// error in it
+    VlanBadHeader,
+    /// The Packet was identified as a SNAP type, but the header was not fully complete, or had an
+    /// error in it
+    SnapBadHeader,
+    /// The Packet was not of an IP type, or the IP packet was invalidly short, or the IP was not of
+    /// type IPv4/IPv6
+    IpBadPacket,
+    /// The Packet was not identified as VLAN, SNAP or IP
+    NotIdentified,
+    /// Non supported packet fragmentation occurred. For IPv4 packets, the IP checksum was generated
+    /// and inserted
+    Fragmentation,
+    /// Packet type detected was not TCP or UDP. TCP/UDP checksum was therefore not generated. For
+    /// IPv4 packets, the IP checksum was generated and inserted
+    NotTcpUdp,
+    /// A premature end of packet was detected and the TCP/UDP checksum could not be generated
+    EndOfPacket,
+}
+
+impl TxChecksumGenerationError {
+    pub fn as_str(&self) -> &str {
+        use TxChecksumGenerationError::*;
+        match self {
+            VlanBadHeader => "VLAN bad header",
+            SnapBadHeader => "SNAP bad header",
+            IpBadPacket => "IP bad packet",
+            NotIdentified => "not VLAN, SNAP, or IP",
+            Fragmentation => "non-supported packet fragmentation",
+            NotTcpUdp => "not TCP or UDP",
+            EndOfPacket => "premature end of packet",
+        }
+    }
+}
+
 pub trait BufferDescriptor {
     fn new(address: &mut [u8]) -> Self;
     fn end_of_list(self) -> Self;
@@ -41,6 +88,7 @@ pub trait BufferDescriptor {
     fn ownership(&self) -> BufferDescriptorOwnership;
     fn release(&mut self);
     fn wrapping(&self) -> BufferDescriptorListWrap;
+    fn end_of_frame(&self) -> bool;
 }
 
 pub struct RxBuffer<'a> {
@@ -204,6 +252,8 @@ impl BufferDescriptor for RxBufferDescriptor {
     fn wrapping(&self) -> BufferDescriptorListWrap {
         RxBufferDescriptor::wrapping_from_word(unsafe { *self.address.get() })
     }
+
+    test_status_bit_fn!(end_of_frame, 15);
 }
 
 impl RxBufferDescriptor {
@@ -211,13 +261,7 @@ impl RxBufferDescriptor {
         unsafe { slice::from_raw_parts(self.address() as *const u8, 128) }
     }
 
-    pub fn start_of_frame(&self) -> bool {
-        unsafe { (*self.status.get()) & 0x0000_4000 != 0 }
-    }
-
-    pub fn end_of_frame(&self) -> bool {
-        unsafe { (*self.status.get()) & 0x0000_8000 != 0 }
-    }
+    test_status_bit_fn!(pub start_of_frame, 14);
 
     fn ownership_from_word(byte: u32) -> BufferDescriptorOwnership {
         match byte & 0x0000_0001 {
@@ -400,6 +444,8 @@ impl BufferDescriptor for TxBufferDescriptor {
     fn wrapping(&self) -> BufferDescriptorListWrap {
         TxBufferDescriptor::wrapping_from_word(unsafe { *self.status.get() })
     }
+
+    test_status_bit_fn!(end_of_frame, 15);
 }
 
 impl TxBufferDescriptor {
@@ -429,6 +475,25 @@ impl TxBufferDescriptor {
             unsafe { *self.status.get() }
                 | Self::ownership_to_word(BufferDescriptorOwnership::Software),
         );
+    }
+
+    test_status_bit_fn!(pub error_retry_limit, 29);
+    test_status_bit_fn!(pub error_tx_underrun, 28);
+    test_status_bit_fn!(pub error_frame_corrupt, 27);
+    test_status_bit_fn!(pub error_late_collision, 26);
+
+    pub fn error_checksum_generation(&self) -> Option<TxChecksumGenerationError> {
+        use TxChecksumGenerationError::*;
+        match (unsafe { *self.status.get() } & (0b111 << 20)) {
+            0b001 => Some(VlanBadHeader),
+            0b010 => Some(SnapBadHeader),
+            0b011 => Some(IpBadPacket),
+            0b100 => Some(NotIdentified),
+            0b101 => Some(Fragmentation),
+            0b110 => Some(NotTcpUdp),
+            0b111 => Some(EndOfPacket),
+            _ => None,
+        }
     }
 
     fn ownership_from_word(byte: u32) -> BufferDescriptorOwnership {

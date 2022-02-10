@@ -27,5 +27,6 @@ lto = true
 opt-level = "s"
 
 [features]
+default = [ "logging" ]
 logging = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
 silent = [ "log/max_level_off" ]
