@@ -312,7 +312,7 @@ impl<'a> Mac<'a> {
         // Walk forward from the start of the transmit window (wrapping around to the beginning of
         // the buffer if necessary), looking for the last unused descriptor. This will be the end
         // of the transmit window.
-        let mut len = 0;
+        let mut len = 1;
         for i in 1..descriptors.len() {
             if descriptors[(start + i) % descriptors.len()].ownership()
                 == BufferDescriptorOwnership::Software
