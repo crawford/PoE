@@ -65,7 +65,9 @@ mod app {
     }
 
     #[local]
-    struct LocalResources {}
+    struct LocalResources {
+        spawn_handle: Option<handle_network::SpawnHandle>,
+    }
 
     #[cfg(feature = "logging")]
     type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
@@ -235,7 +237,7 @@ mod app {
                 },
                 rtc: cx.device.RTC,
             },
-            LocalResources {},
+            LocalResources { spawn_handle: None },
             init::Monotonics(Monotonic::new(
                 &mut cx.core.DCB,
                 cx.core.DWT,
@@ -245,11 +247,12 @@ mod app {
         )
     }
 
-    #[task(shared = [network, rtc])]
+    #[task(local = [spawn_handle], shared = [network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
         let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
+        let spawn_handle = cx.local.spawn_handle;
         let mut network = cx.shared.network;
 
         match network.lock(|network| network.interface.poll(timestamp)) {
@@ -264,9 +267,15 @@ mod app {
 
         if let Some(delay) = network.lock(|network| network.interface.poll_delay(timestamp)) {
             use dwt_systick_monotonic::fugit::ExtU32;
-            handle_network::spawn_after((delay.total_millis() as u32).millis()).ignore();
+            log::trace!("Scheduling network handling in {}", delay);
 
-            log::trace!("Scheduled network handling in {}", delay);
+            let delay = (delay.total_millis() as u32).millis();
+            *spawn_handle = spawn_handle
+                .take()
+                .and_then(|h| h.reschedule_after(delay).ok())
+                .or_else(|| {
+                    Some(handle_network::spawn_after(delay).expect("spawning handle_network"))
+                });
         }
 
         log::trace!("Finished handling network");
