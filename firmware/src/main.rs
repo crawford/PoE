@@ -26,7 +26,7 @@ use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use led::rgb::{self, Color};
 use led::LED;
-use panic_itm as _;
+use smoltcp::time::Instant;
 
 type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
 type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
@@ -361,4 +361,24 @@ pub unsafe fn steal_leds() -> (LED0, LED1) {
     );
 
     (led0, led1)
+}
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
+    let itm = unsafe { &mut *cortex_m::peripheral::ITM::ptr() };
+
+    cortex_m::interrupt::disable();
+
+    let now = Instant::from_millis(rtc.cnt.read().cnt().bits());
+    let stim = &mut itm.stim[0];
+
+    log::error!("Panic at {}", now);
+    cortex_m::iprintln!(stim, "{}", info);
+
+    if cortex_m::peripheral::DCB::is_debugger_attached() {
+        asm::bkpt();
+    }
+
+    loop {}
 }
