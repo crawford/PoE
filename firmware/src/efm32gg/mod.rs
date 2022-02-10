@@ -306,8 +306,49 @@ impl<'a> Mac<'a> {
 
         // Reclaim the descriptors of the previously-used transmit window. Unfortunately, the
         // hardware only clears the ownership flag on the first descriptor for a frame.
-        for i in 1..((descriptors[start].length() + 127) / 128) {
-            descriptors[(start + i) % descriptors.len()].claim()
+        let mut end_of_buffer = true;
+        let len = descriptors.len();
+        for i in (1..len).map(|i| (len + queue_ptr - i) % len) {
+            let d = &mut descriptors[i];
+            match d.ownership() {
+                BufferDescriptorOwnership::Hardware => {
+                    if end_of_buffer && !d.end_of_frame() {
+                        log::warn!("Dangling TX desc {}: {:?}", i, d);
+                    } else if !end_of_buffer && d.end_of_frame() {
+                        log::warn!("Released TX frame {} (unsent?): {:?}", i, d);
+                    }
+                    end_of_buffer = false;
+                    d.claim();
+                }
+                BufferDescriptorOwnership::Software => {
+                    fn error_str(cond: bool, msg: &str) -> &str {
+                        match cond {
+                            false => "",
+                            true => msg,
+                        }
+                    }
+
+                    log::trace!(
+                        "  {:>2} (Done) - {:?} (errors:{}{}{}{}{})",
+                        i,
+                        d,
+                        error_str(d.error_retry_limit(), " 'retry limit exceeded'"),
+                        error_str(d.error_tx_underrun(), " underrun"),
+                        error_str(d.error_frame_corrupt(), " 'frame corruption'"),
+                        error_str(d.error_late_collision(), " 'late collision'"),
+                        match d.error_checksum_generation() {
+                            Some(ref err) => err.as_str(),
+                            None => "",
+                        }
+                    );
+
+                    if end_of_buffer {
+                        log::trace!("    (may be duplicate)");
+                        break;
+                    }
+                    end_of_buffer = true;
+                }
+            }
         }
 
         // Walk forward from the start of the transmit window (wrapping around to the beginning of
