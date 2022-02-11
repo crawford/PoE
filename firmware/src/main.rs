@@ -42,7 +42,7 @@ mod app {
     use crate::network;
 
     use core::pin::Pin;
-    use cortex_m::interrupt;
+    use cortex_m::{delay::Delay, interrupt};
     use efm32gg_hal::cmu::CMUExt;
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
     use ignore_result::Ignore;
@@ -184,6 +184,7 @@ mod app {
             log::info!("Logger online!");
         };
 
+        let mut delay = Delay::new(cx.core.SYST, 50_000_000);
         let mut interface = InterfaceBuilder::new(
             efm32gg::EFM32GG::new(
                 dma::RxBuffer::new(
@@ -195,6 +196,7 @@ mod app {
                     Pin::new(cx.local.eth_tx_descriptors),
                 ),
                 cx.device.ETH,
+                &mut delay,
                 efm32gg::Pins {
                     rmii_rxd0: gpio.pd9.as_input(),
                     rmii_refclk: gpio.pd10.as_output(),
@@ -227,6 +229,7 @@ mod app {
 
         handle_network::spawn().unwrap();
 
+        let syst = delay.free();
         (
             SharedResources {
                 led0,
@@ -241,7 +244,7 @@ mod app {
             init::Monotonics(Monotonic::new(
                 &mut cx.core.DCB,
                 cx.core.DWT,
-                cx.core.SYST,
+                syst,
                 50_000_000,
             )),
         )

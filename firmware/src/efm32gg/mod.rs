@@ -16,14 +16,13 @@ pub mod dma;
 
 use crate::mac;
 use crate::phy::{probe_for_phy, Phy, Register};
-use cortex_m::asm;
 use dma::{
     BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
     TxBufferDescriptor,
 };
 use efm32gg11b820::{self, Interrupt, ETH, NVIC};
 use efm32gg_hal::gpio::{pins, Input, Output};
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
 use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use led::LED;
@@ -40,19 +39,14 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
         rx_buffer: RxBuffer<'a>,
         tx_buffer: TxBuffer<'a>,
         eth: ETH,
+        delay: &mut dyn DelayMs<u8>,
         pins: Pins,
         new_phy: F,
     ) -> Result<EFM32GG<'a, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = Mac::new(rx_buffer, tx_buffer, eth, pins);
-
-        // XXX: Wait for the PHY
-        for _ in 0..1000 {
-            asm::nop();
-        }
-
+        let mac = Mac::new(rx_buffer, tx_buffer, eth, delay, pins);
         let phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
         log::debug!("OUI: {}", phy.oui(&mac));
 
@@ -88,7 +82,13 @@ pub struct Pins {
 impl<'a> Mac<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
-    fn new(rx_buffer: RxBuffer<'a>, tx_buffer: TxBuffer<'a>, eth: ETH, mut pins: Pins) -> Mac<'a> {
+    fn new(
+        rx_buffer: RxBuffer<'a>,
+        tx_buffer: TxBuffer<'a>,
+        eth: ETH,
+        delay: &mut dyn DelayMs<u8>,
+        mut pins: Pins,
+    ) -> Mac<'a> {
         let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
 
         // Enable the HFPER clock and source CLKOUT2 from HFXO
@@ -230,6 +230,9 @@ impl<'a> Mac<'a> {
             reg.manporten().set_bit();
             reg
         });
+
+        // Wait for the PHY's supply to stabilize and for it to initialize
+        delay.delay_ms(10);
 
         // Release the PHY reset
         pins.phy_reset.set_high().ignore();
