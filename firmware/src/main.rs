@@ -250,7 +250,7 @@ mod app {
         )
     }
 
-    #[task(local = [spawn_handle], shared = [network, rtc])]
+    #[task(capacity = 2, local = [spawn_handle], shared = [network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
