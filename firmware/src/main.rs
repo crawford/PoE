@@ -26,7 +26,7 @@ use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use led::rgb::{self, Color};
 use led::LED;
-use panic_itm as _;
+use smoltcp::time::Instant;
 
 type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
 type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
@@ -42,15 +42,15 @@ mod app {
     use crate::network;
 
     use core::pin::Pin;
-    use cortex_m::interrupt;
+    use cortex_m::{delay::Delay, interrupt};
     use efm32gg_hal::cmu::CMUExt;
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
     use ignore_result::Ignore;
     use led::rgb::{self, Color};
     use led::LED;
-    use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, SocketStorage};
-    use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-    use smoltcp::time::Instant;
+    use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
+    use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
+    use smoltcp::time::{Duration, Instant};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
 
     #[monotonic(binds = SysTick, default = true)]
@@ -84,11 +84,10 @@ mod app {
              tcp_tx_payload: [u8; 128] = [0; 128],
 
              neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 1] = [SocketStorage::EMPTY; 1],
-             ip_addresses: [IpCidr; 1] = [IpCidr::Ipv4(Ipv4Cidr::new(
-                Ipv4Address::new(192, 168, 0, 3),
-                24,
-            ))],
+             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
+             ip_addresses: [IpCidr; 1] =
+                [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
+            routes: [Option<(IpCidr, Route)>; 1] = [None; 1],
         ]
     )]
     fn init(mut cx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
@@ -173,7 +172,7 @@ mod app {
 
             let logger = Logger {
                 inner: InterruptSync::new(Itm::new(cx.core.ITM)),
-                level: log::LevelFilter::Debug,
+                level: log::LevelFilter::Info,
             };
 
             unsafe {
@@ -181,9 +180,10 @@ mod app {
                 cortex_m_log::log::trick_init(LOGGER.assume_init_ref()).unwrap();
             }
 
-            log::debug!("Logger online!");
+            log::info!("Logger online!");
         };
 
+        let mut delay = Delay::new(cx.core.SYST, 50_000_000);
         let mut interface = InterfaceBuilder::new(
             efm32gg::EFM32GG::new(
                 dma::RxBuffer::new(
@@ -195,6 +195,7 @@ mod app {
                     Pin::new(cx.local.eth_tx_descriptors),
                 ),
                 cx.device.ETH,
+                &mut delay,
                 efm32gg::Pins {
                     rmii_rxd0: gpio.pd9.as_input(),
                     rmii_refclk: gpio.pd10.as_output(),
@@ -217,6 +218,7 @@ mod app {
         .hardware_addr(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]).into())
         .neighbor_cache(NeighborCache::new(cx.local.neighbors.as_mut()))
         .ip_addrs(cx.local.ip_addresses.as_mut())
+        .routes(Routes::new(cx.local.routes.as_mut()))
         .random_seed(seed)
         .finalize();
 
@@ -225,8 +227,14 @@ mod app {
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
 
+        let mut dhcp_socket = Dhcpv4Socket::new();
+        // XXX: just for testing
+        dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(60)));
+        let dhcp_handle = interface.add_socket(dhcp_socket);
+
         handle_network::spawn().unwrap();
 
+        let syst = delay.free();
         (
             SharedResources {
                 led0,
@@ -234,6 +242,7 @@ mod app {
                 network: network::Resources {
                     interface,
                     tcp_handle,
+                    dhcp_handle,
                 },
                 rtc: cx.device.RTC,
             },
@@ -241,13 +250,13 @@ mod app {
             init::Monotonics(Monotonic::new(
                 &mut cx.core.DCB,
                 cx.core.DWT,
-                cx.core.SYST,
+                syst,
                 50_000_000,
             )),
         )
     }
 
-    #[task(local = [spawn_handle], shared = [network, rtc])]
+    #[task(capacity = 2, local = [spawn_handle], shared = [network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
@@ -278,7 +287,7 @@ mod app {
                 });
         }
 
-        log::trace!("Finished handling network");
+        log::trace!("Handled sockets: {}", timestamp);
     }
 
     #[task(binds = ETH, shared = [network, led0, led1])]
@@ -288,8 +297,6 @@ mod app {
             mut led0,
             mut led1,
         } = cx.shared;
-
-        log::trace!("Interrupt - ETH");
 
         interrupt::free(|_| {
             network.lock(|network| {
@@ -363,4 +370,24 @@ pub unsafe fn steal_leds() -> (LED0, LED1) {
     );
 
     (led0, led1)
+}
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
+    let itm = unsafe { &mut *cortex_m::peripheral::ITM::ptr() };
+
+    cortex_m::interrupt::disable();
+
+    let now = Instant::from_millis(rtc.cnt.read().cnt().bits());
+    let stim = &mut itm.stim[0];
+
+    log::error!("Panic at {}", now);
+    cortex_m::iprintln!(stim, "{}", info);
+
+    if cortex_m::peripheral::DCB::is_debugger_attached() {
+        asm::bkpt();
+    }
+
+    loop {}
 }

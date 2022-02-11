@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::mac::Mac;
-use crate::phy::{LinkState, Register, OUI, PHY};
+use crate::phy::{LinkState, Oui, Phy, Register};
 
 pub struct KSZ8091 {
     address: u8,
@@ -25,18 +25,18 @@ impl KSZ8091 {
     }
 }
 
-impl PHY for KSZ8091 {
-    fn oui(&self, mac: &dyn Mac) -> OUI {
-        // Bits [2:17] of the OUI are in bits [15:0] of PHY ID 1.
-        // Bits [18:23] of the OUI are in bits [15:10] of PHY ID 2.
-        // Concatenating these two gives the OUI in bit-reverse order
+impl Phy for KSZ8091 {
+    fn oui(&self, mac: &dyn Mac) -> Oui {
+        // Bits [2:17] of the Oui are in bits [15:0] of PHY ID 1.
+        // Bits [18:23] of the Oui are in bits [15:10] of PHY ID 2.
+        // Concatenating these two gives the Oui in bit-reverse order
         // (e.g. 0b00 [2:17] [18:23] 0000 0000).
         let id1 = u32::from(mac.mdio_read(self.address, Register::PhyId1));
         let id2 = u32::from(mac.mdio_read(self.address, Register::PhyId2));
 
         // TODO: Use u32::reverse_bits once it is stablized.
         let oui = reverse(id1 << 14 | id2 >> 2);
-        OUI([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
+        Oui([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
     }
 
     fn link_state(&self, _mac: &dyn Mac) -> LinkState {

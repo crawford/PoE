@@ -15,44 +15,39 @@
 pub mod dma;
 
 use crate::mac;
-use crate::phy::{probe_for_phy, Register, PHY};
-use cortex_m::asm;
+use crate::phy::{probe_for_phy, Phy, Register};
+use core::cmp;
 use dma::{
     BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
     TxBufferDescriptor,
 };
 use efm32gg11b820::{self, Interrupt, ETH, NVIC};
 use efm32gg_hal::gpio::{pins, Input, Output};
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
 use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use led::LED;
 use smoltcp::{self, phy, time, Error};
 
-pub struct EFM32GG<'a, P: PHY> {
+pub struct EFM32GG<'a, P: Phy> {
     mac: Mac<'a>,
     #[allow(unused)]
     phy: P,
 }
 
-impl<'a, P: PHY> EFM32GG<'a, P> {
+impl<'a, P: Phy> EFM32GG<'a, P> {
     pub fn new<F>(
         rx_buffer: RxBuffer<'a>,
         tx_buffer: TxBuffer<'a>,
         eth: ETH,
+        delay: &mut dyn DelayMs<u8>,
         pins: Pins,
         new_phy: F,
     ) -> Result<EFM32GG<'a, P>, &'static str>
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = Mac::new(rx_buffer, tx_buffer, eth, pins);
-
-        // XXX: Wait for the PHY
-        for _ in 0..1000 {
-            asm::nop();
-        }
-
+        let mac = Mac::new(rx_buffer, tx_buffer, eth, delay, pins);
         let phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
         log::debug!("OUI: {}", phy.oui(&mac));
 
@@ -88,7 +83,13 @@ pub struct Pins {
 impl<'a> Mac<'a> {
     /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
     /// clock.
-    fn new(rx_buffer: RxBuffer<'a>, tx_buffer: TxBuffer<'a>, eth: ETH, mut pins: Pins) -> Mac<'a> {
+    fn new(
+        rx_buffer: RxBuffer<'a>,
+        tx_buffer: TxBuffer<'a>,
+        eth: ETH,
+        delay: &mut dyn DelayMs<u8>,
+        mut pins: Pins,
+    ) -> Mac<'a> {
         let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
 
         // Enable the HFPER clock and source CLKOUT2 from HFXO
@@ -231,6 +232,9 @@ impl<'a> Mac<'a> {
             reg
         });
 
+        // Wait for the PHY's supply to stabilize and for it to initialize
+        delay.delay_ms(10);
+
         // Release the PHY reset
         pins.phy_reset.set_high().ignore();
 
@@ -302,14 +306,55 @@ impl<'a> Mac<'a> {
 
         // Reclaim the descriptors of the previously-used transmit window. Unfortunately, the
         // hardware only clears the ownership flag on the first descriptor for a frame.
-        for i in 1..((descriptors[start].length() + 127) / 128) {
-            descriptors[(start + i) % descriptors.len()].claim()
+        let mut end_of_buffer = true;
+        let len = descriptors.len();
+        for i in (1..len).map(|i| (len + queue_ptr - i) % len) {
+            let d = &mut descriptors[i];
+            match d.ownership() {
+                BufferDescriptorOwnership::Hardware => {
+                    if end_of_buffer && !d.end_of_frame() {
+                        log::warn!("Dangling TX desc {}: {:?}", i, d);
+                    } else if !end_of_buffer && d.end_of_frame() {
+                        log::warn!("Released TX frame {} (unsent?): {:?}", i, d);
+                    }
+                    end_of_buffer = false;
+                    d.claim();
+                }
+                BufferDescriptorOwnership::Software => {
+                    fn error_str(cond: bool, msg: &str) -> &str {
+                        match cond {
+                            false => "",
+                            true => msg,
+                        }
+                    }
+
+                    log::trace!(
+                        "  {:>2} (Done) - {:?} (errors:{}{}{}{}{})",
+                        i,
+                        d,
+                        error_str(d.error_retry_limit(), " 'retry limit exceeded'"),
+                        error_str(d.error_tx_underrun(), " underrun"),
+                        error_str(d.error_frame_corrupt(), " 'frame corruption'"),
+                        error_str(d.error_late_collision(), " 'late collision'"),
+                        match d.error_checksum_generation() {
+                            Some(ref err) => err.as_str(),
+                            None => "",
+                        }
+                    );
+
+                    if end_of_buffer {
+                        log::trace!("    (may be duplicate)");
+                        break;
+                    }
+                    end_of_buffer = true;
+                }
+            }
         }
 
         // Walk forward from the start of the transmit window (wrapping around to the beginning of
         // the buffer if necessary), looking for the last unused descriptor. This will be the end
         // of the transmit window.
-        let mut len = 0;
+        let mut len = 1;
         for i in 1..descriptors.len() {
             if descriptors[(start + i) % descriptors.len()].ownership()
                 == BufferDescriptorOwnership::Software
@@ -336,6 +381,7 @@ impl<'a> Mac<'a> {
         if int.rxoverrun().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
             led1.set(Color::Yellow);
+            log::error!("RX Overrun Interrupt");
         }
         if int.txcmplt().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.txcmplt().set_bit());
@@ -344,15 +390,25 @@ impl<'a> Mac<'a> {
         if int.txunderrun().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.txunderrun().set_bit());
             led0.set(Color::Yellow);
+            log::error!("TX Underrun Interrupt");
+        }
+        if int.ambaerr().bit_is_set() {
+            self.eth.ifcr.write(|reg| reg.ambaerr().set_bit());
+            led0.set(Color::Yellow);
+            log::error!("TX AMBA Error Interrupt");
         }
 
-        let int = self.eth.ifcr.read();
-        if int.bits() != 0 {
-            log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
-            self.eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
-            led0.set(Color::Cyan);
-            led1.set(Color::Cyan);
-        }
+        // XXX: Read from ifcr seems to be racy. I'm guessing its because that register can change
+        // values even if interrupts are disabled. I saw the following in a test run, which
+        // shouldn't be possible (0x02 is RXCMPLT): Unhandled interrupt (ETH): 0x2
+        //
+        // let int = self.eth.ifcr.read();
+        // if int.bits() != 0 {
+        //     log::error!("Unhandled interrupt (ETH): {:#X}", int.bits());
+        //     self.eth.ifcr.write(|reg| unsafe { reg.bits(int.bits()) });
+        //     led0.set(Color::Cyan);
+        //     led1.set(Color::Cyan);
+        // }
     }
 }
 
@@ -392,23 +448,19 @@ impl<'a> mac::Mac for Mac<'a> {
     }
 }
 
-impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
+impl<'a, P: Phy> phy::Device<'a> for EFM32GG<'_, P> {
     type RxToken = RxToken<'a>;
     type TxToken = TxToken<'a>;
 
     fn capabilities(&self) -> phy::DeviceCapabilities {
         let mut caps = phy::DeviceCapabilities::default();
         caps.max_transmission_unit = 1536;
-        caps.checksum.icmpv4 = phy::Checksum::Both;
-        caps.checksum.ipv4 = phy::Checksum::Both;
-        caps.checksum.tcp = phy::Checksum::Both;
-        caps.checksum.udp = phy::Checksum::Both;
         caps
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
         let (rx_start, rx_end) = self.mac.find_rx_window()?;
-        let (tx_start, tx_len) = self.mac.find_tx_window()?;
+        let (tx_start, tx_length) = self.mac.find_tx_window()?;
 
         Some((
             RxToken {
@@ -419,18 +471,18 @@ impl<'a, P: PHY> phy::Device<'a> for EFM32GG<'_, P> {
             TxToken {
                 descriptors: self.mac.tx_buffer.descriptors_mut(),
                 start: tx_start,
-                len: tx_len,
+                length: tx_length,
             },
         ))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let (start, len) = self.mac.find_tx_window()?;
+        let (start, length) = self.mac.find_tx_window()?;
 
         Some(TxToken {
             descriptors: self.mac.tx_buffer.descriptors_mut(),
             start,
-            len,
+            length,
         })
     }
 }
@@ -472,9 +524,14 @@ impl<'a> phy::RxToken for RxToken<'a> {
 }
 
 pub struct TxToken<'a> {
+    /// The list of allocated TX buffer descriptors.
     descriptors: &'a mut [TxBufferDescriptor],
+
+    /// The index of the starting TX buffer descriptor.
     start: usize,
-    len: usize,
+
+    /// The length of the token, in TX buffers.
+    length: usize,
 }
 
 impl<'a> phy::TxToken for TxToken<'a> {
@@ -482,7 +539,8 @@ impl<'a> phy::TxToken for TxToken<'a> {
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        if len > (self.len * 128) {
+        if len > (self.length * 128) {
+            log::warn!("TX exhausted: buffer={} token={}", len, self.length * 128);
             return Err(Error::Exhausted);
         }
 
@@ -494,13 +552,11 @@ impl<'a> phy::TxToken for TxToken<'a> {
 
         for i in 0..=last_buffer {
             let d = &mut self.descriptors[(self.start + i) % self.descriptors.len()];
+            let buffer_len = cmp::min(128, len - i * 128);
+
             d.as_slice_mut().copy_from_slice(&data[(i * 128)..][..128]);
-            if i == 0 {
-                d.set_length(len);
-            }
-            if i == last_buffer {
-                d.set_last_buffer(true);
-            }
+            d.set_length(buffer_len);
+            d.set_last_buffer(i == last_buffer);
             d.release();
         }
 
