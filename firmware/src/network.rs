@@ -15,7 +15,6 @@
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
 
-use core::fmt::Write;
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
@@ -35,13 +34,23 @@ impl Resources {
     fn handle_tcp(&mut self) {
         let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
         if !socket.is_open() {
-            socket.listen(6969).unwrap();
+            socket.listen(8000).unwrap();
         }
 
-        if socket.can_send() {
-            log::debug!("tcp:6969 send greeting");
-            writeln!(socket, "hello").unwrap();
-            log::debug!("tcp:6969 close");
+        if socket.may_recv() {
+            let mut buffer = [0; 1024];
+            let msg = socket
+                .recv(|b| {
+                    let len = b.len();
+                    buffer[0..len].copy_from_slice(b);
+                    (len, &buffer[0..len])
+                })
+                .unwrap();
+
+            if socket.can_send() && !msg.is_empty() {
+                socket.send_slice(msg).unwrap();
+            }
+        } else if socket.may_send() {
             socket.close();
         }
     }

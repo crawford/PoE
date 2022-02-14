@@ -18,6 +18,7 @@ let
 in
 mkShell {
   buildInputs = [
+    fio
     rust
     sccache
   ];
