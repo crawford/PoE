@@ -147,7 +147,36 @@ mod app {
             seed
         };
 
-        let gpio = cx.device.GPIO.split(cx.device.CMU.constrain().split().gpio);
+        let mut gpio_clk = cx.device.CMU.constrain().split().gpio;
+        gpio_clk.enable();
+
+        // TODO: Move into efm32gg-hal.
+        // Configure PG15 as an input with pull-up, and enable interrupts on the falling edge. This is connected
+        // to INTRP on the PHY.
+        cx.device.GPIO.pg_modeh.modify(|_, w| w.mode15().input());
+        cx.device
+            .GPIO
+            .extipselh
+            .modify(|_, w| w.extipsel15().portg());
+        cx.device
+            .GPIO
+            .extipinselh
+            .modify(|_, w| w.extipinsel15().pin15());
+        cx.device
+            .GPIO
+            .extifall
+            .modify(|_, w| unsafe { w.extifall().bits(1 << 15) });
+        cx.device
+            .GPIO
+            .ifc
+            .write(|w| unsafe { w.ext().bits(1 << 15) });
+        efm32gg11b820::NVIC::unpend(efm32gg11b820::Interrupt::GPIO_ODD);
+        cx.device
+            .GPIO
+            .ien
+            .write(|w| unsafe { w.ext().bits(1 << 15) });
+
+        let gpio = cx.device.GPIO.split(gpio_clk);
         let _swo = gpio.pf2.as_output();
 
         let mut led0 = rgb::CommonAnodeLED::new(
@@ -232,8 +261,6 @@ mod app {
         dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(60)));
         let dhcp_handle = interface.add_socket(dhcp_socket);
 
-        handle_network::spawn().unwrap();
-
         let syst = delay.free();
         (
             SharedResources {
@@ -302,13 +329,29 @@ mod app {
             network.lock(|network| {
                 led0.lock(|led0| {
                     led1.lock(|led1| {
-                        network.interface.device_mut().irq(led0, led1);
+                        network.interface.device_mut().mac_irq(led0, led1);
                     })
                 })
             })
         });
 
         handle_network::spawn().ignore();
+    }
+
+    #[task(binds = GPIO_ODD, shared = [network])]
+    fn gpio_odd_irq(mut cx: gpio_odd_irq::Context) {
+        use dwt_systick_monotonic::fugit::ExtU32;
+
+        (unsafe { &*efm32gg11b820::GPIO::ptr() })
+            .ifc
+            .write(|w| unsafe { w.ext().bits(1 << 15) });
+
+        cx.shared.network.lock(|network| {
+            network.interface.device_mut().phy_irq();
+        });
+
+        // TODO: Why is the one-second delay necessary? 100 ms doesn't work.
+        handle_network::spawn_after(1000u32.millis()).ignore()
     }
 }
 

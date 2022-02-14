@@ -46,6 +46,36 @@ impl Phy for KSZ8091 {
     fn set_link_state(&mut self, _mac: &dyn Mac, _state: LinkState) {
         unimplemented!()
     }
+
+    /// Enable interrupts for link-up and link-down
+    fn enable_interrupts(&mut self, mac: &mut dyn Mac) {
+        mac.mdio_write(self.address, Register::Vendor(0x1B), 0x0500);
+    }
+
+    fn irq(&mut self, mac: &mut dyn Mac) {
+        let status = mac.mdio_read(self.address, Register::Vendor(0x1B)) as u8;
+
+        macro_rules! bit_str {
+            ($pos:literal, $str:expr) => {
+                match status & (1 << $pos) {
+                    0 => "",
+                    _ => $str,
+                }
+            };
+        }
+
+        log::trace!(
+            "PHY IRQ:{}{}{}{}{}{}{}{}",
+            bit_str!(7, " jabber"),
+            bit_str!(6, " receive-error"),
+            bit_str!(5, " page-received"),
+            bit_str!(4, " parallel-detect-fault"),
+            bit_str!(3, " link-partner-ack"),
+            bit_str!(2, " link-down"),
+            bit_str!(1, " remote-fault"),
+            bit_str!(0, " link-up"),
+        );
+    }
 }
 
 fn reverse(mut x: u32) -> u32 {

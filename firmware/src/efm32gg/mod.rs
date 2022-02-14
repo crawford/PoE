@@ -47,15 +47,20 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
     where
         F: FnOnce(u8) -> P,
     {
-        let mac = Mac::new(rx_buffer, tx_buffer, eth, delay, pins);
-        let phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
+        let mut mac = Mac::new(rx_buffer, tx_buffer, eth, delay, pins);
+        let mut phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
         log::debug!("OUI: {}", phy.oui(&mac));
+        phy.enable_interrupts(&mut mac);
 
         Ok(EFM32GG { mac, phy })
     }
 
-    pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
+    pub fn mac_irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
         self.mac.irq(led0, led1)
+    }
+
+    pub fn phy_irq(&mut self) {
+        self.phy.irq(&mut self.mac);
     }
 }
 

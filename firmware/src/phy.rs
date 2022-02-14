@@ -21,6 +21,8 @@ pub trait Phy {
     fn oui(&self, mac: &dyn Mac) -> Oui;
     fn link_state(&self, mac: &dyn Mac) -> LinkState;
     fn set_link_state(&mut self, mac: &dyn Mac, state: LinkState);
+    fn enable_interrupts(&mut self, mac: &mut dyn Mac);
+    fn irq(&mut self, mac: &mut dyn Mac);
 }
 
 #[allow(unused)]
