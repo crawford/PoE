@@ -15,43 +15,101 @@
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
 
+use core::str::FromStr;
+use led::rgb::Color;
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 
 pub struct Resources {
     pub interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
-    pub tcp_handle: SocketHandle,
+    pub http_handle: SocketHandle,
+    pub websocket_handle: SocketHandle,
     pub dhcp_handle: SocketHandle,
 }
 
+enum Method {
+    Get,
+    Post,
+    Unknown,
+}
+
 impl Resources {
-    pub fn handle_sockets(&mut self) {
-        self.handle_tcp();
+    pub fn handle_sockets(&mut self, led: &mut dyn led::rgb::RGB) {
+        self.handle_www(led);
         self.handle_dhcp();
     }
 
-    fn handle_tcp(&mut self) {
-        let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
+    fn handle_www(&mut self, led: &mut dyn led::rgb::RGB) {
+        let socket = self.interface.get_socket::<TcpSocket>(self.http_handle);
         if !socket.is_open() {
-            socket.listen(8000).unwrap();
+            socket.listen(80).unwrap();
         }
 
-        if socket.may_recv() {
-            let mut buffer = [0; 1024];
-            let msg = socket
+        if socket.can_recv() && socket.can_send() {
+            match socket
                 .recv(|b| {
-                    let len = b.len();
-                    buffer[0..len].copy_from_slice(b);
-                    (len, &buffer[0..len])
-                })
-                .unwrap();
+                    if b.starts_with(b"GET /") {
+                        (b.len(), Method::Get)
+                    } else if b.starts_with(b"POST /value") {
+                        fn convert(bytes: &[u8]) -> Option<Color> {
+                            let hex = unsafe { core::str::from_utf8_unchecked(bytes) };
+                            let red = !u8::from_str(&hex[0..2]).ok()?;
+                            let green = !u8::from_str(&hex[2..4]).ok()?;
+                            let blue = !u8::from_str(&hex[4..6]).ok()?;
 
-            if socket.can_send() && !msg.is_empty() {
-                socket.send_slice(msg).unwrap();
+                            Some(Color { red, green, blue })
+                        }
+
+                        match convert(&b[b.len() - 6..]) {
+                            Some(color) => {
+                                led.set(color);
+                                (b.len(), Method::Post)
+                            }
+                            None => (b.len(), Method::Unknown),
+                        }
+                    } else {
+                        (b.len(), Method::Unknown)
+                    }
+                })
+                .unwrap()
+            {
+                Method::Get => {
+                    let header = include_bytes!(concat!(env!("OUT_DIR"), "/index-200.txt"));
+                    let html = include_bytes!(concat!(env!("OUT_DIR"), "/index.html"));
+                    socket
+                        .send(|b| {
+                            b[0..header.len()].copy_from_slice(header);
+                            b[header.len()..][..html.len()].copy_from_slice(html);
+
+                            (header.len() + html.len(), ())
+                        })
+                        .unwrap();
+                    socket.close();
+                }
+                Method::Post => {
+                    let header = include_bytes!(concat!(env!("OUT_DIR"), "/value-200.txt"));
+                    socket
+                        .send(|b| {
+                            b[0..header.len()].copy_from_slice(header);
+
+                            (header.len(), ())
+                        })
+                        .unwrap();
+                    socket.close();
+                }
+                Method::Unknown => {
+                    let header = include_bytes!(concat!(env!("OUT_DIR"), "/400.txt"));
+                    socket
+                        .send(|b| {
+                            b[0..header.len()].copy_from_slice(header);
+
+                            (header.len(), ())
+                        })
+                        .unwrap();
+                    socket.close();
+                }
             }
-        } else if socket.may_send() {
-            socket.close();
         }
     }
 

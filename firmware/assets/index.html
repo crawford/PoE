@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Embedded Site</title>
+  </head>
+  <body>
+    <label for="red">Red:</label>
+    <input id="red" type="range" min="0" max="128" value="50">
+    <br>
+    <label for="green">Green:</label>
+    <input id="green" type="range" min="0" max="128" value="50">
+    <br>
+    <label for="blue">Blue:</label>
+    <input id="blue" type="range" min="0" max="128" value="50">
+    <script type="text/javascript">
+      document.querySelector('#red').oninput = handleChange;
+      document.querySelector('#green').oninput = handleChange;
+      document.querySelector('#blue').oninput = handleChange;
+
+      function handleChange(e) {
+	  let red = parseInt(document.querySelector('#red').value).toString(16).padStart(2, 0);
+	  let green = parseInt(document.querySelector('#green').value).toString(16).padStart(2, 0);
+	  let blue = parseInt(document.querySelector('#blue').value).toString(16).padStart(2, 0);
+
+	  fetch(new Request('/value', {
+	      method: 'POST',
+	      body: red + green + blue,
+	  }));
+      }
+    </script>
+  </body>
+</html>

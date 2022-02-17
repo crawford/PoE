@@ -24,12 +24,12 @@ mod phy;
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
-use led::rgb::{self, Color};
+use led::rgb::{self, DiscreteColor};
 use led::LED;
 use smoltcp::time::Instant;
 
-type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
-type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
+type LED0 = rgb::CommonAnodeDiscreteLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
+type LED1 = rgb::CommonAnodeDiscreteLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
 
 #[rtic::app(
     dispatchers = [ CAN0, CAN1 ],
@@ -44,9 +44,11 @@ mod app {
     use core::pin::Pin;
     use cortex_m::{delay::Delay, interrupt};
     use efm32gg_hal::cmu::CMUExt;
-    use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
+    use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
+    use efm32gg_hal::timer::{self, TimerExt};
+    use embedded_hal::PwmPin;
     use ignore_result::Ignore;
-    use led::rgb::{self, Color};
+    use led::rgb::{self, Color, DiscreteColor};
     use led::LED;
     use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
     use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
@@ -58,7 +60,11 @@ mod app {
 
     #[shared]
     struct SharedResources {
-        led0: crate::LED0,
+        led0: rgb::CommonAnodeLED<
+            timer::RoutedTimerChannel<timer::Timer6, timer::Channel2, pins::PH10<Output>>,
+            timer::RoutedTimerChannel<timer::Timer5, timer::Channel1, pins::PH11<Output>>,
+            timer::RoutedTimerChannel<timer::Timer5, timer::Channel2, pins::PH12<Output>>,
+        >,
         led1: crate::LED1,
         network: network::Resources,
         rtc: efm32gg11b820::RTC,
@@ -76,16 +82,19 @@ mod app {
 
     #[init(
         local = [
-             eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
-             eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
-             eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
-             eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
-             tcp_rx_payload: [u8; 1024] = [0; 1024],
-             tcp_tx_payload: [u8; 1024] = [0; 1024],
+            eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
+            eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
+            eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
+            eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
 
-             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
-             ip_addresses: [IpCidr; 1] =
+            http_rx_payload: [u8; 512] = [0; 512],
+            http_tx_payload: [u8; 1024] = [0; 1024],
+            websocket_rx_payload: [u8; 128] = [0; 128],
+            websocket_tx_payload: [u8; 128] = [0; 128],
+
+            neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
+            sockets: [SocketStorage<'static>; 3] = [SocketStorage::EMPTY; 3],
+            ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 1] = [None; 1],
         ]
@@ -147,7 +156,19 @@ mod app {
             seed
         };
 
-        let mut gpio_clk = cx.device.CMU.constrain().split().gpio;
+        // Enable timers 5 and 6
+        cx.device.CMU.hfperclken0.modify(|_, w| {
+            w.timer5().set_bit();
+            w.timer6().set_bit();
+            w
+        });
+
+        let efm32gg_hal::cmu::Clocks {
+            gpio: mut gpio_clk,
+            timer5,
+            timer6,
+            ..
+        } = cx.device.CMU.constrain().split();
         gpio_clk.enable();
 
         // TODO: Move into efm32gg-hal.
@@ -179,20 +200,38 @@ mod app {
         let gpio = cx.device.GPIO.split(gpio_clk);
         let _swo = gpio.pf2.as_output();
 
-        let mut led0 = rgb::CommonAnodeLED::new(
-            gpio.ph10.as_opendrain(),
-            gpio.ph11.as_opendrain(),
-            gpio.ph12.as_opendrain(),
-        );
+        let tim5 = {
+            let mut timer = cx.device.TIMER5.with_clock(timer5);
+            timer.start();
+            timer.set_top(255);
+            timer.split()
+        };
+        let tim6 = {
+            let mut timer = cx.device.TIMER6.with_clock(timer6);
+            timer.start();
+            timer.set_top(255);
+            timer.split()
+        };
+        let mut r = tim6.channel2.route(gpio.ph10.as_opendrain());
+        let mut g = tim5.channel1.route(gpio.ph11.as_opendrain());
+        let mut b = tim5.channel2.route(gpio.ph12.as_opendrain());
+        r.enable();
+        g.enable();
+        b.enable();
 
-        let mut led1 = rgb::CommonAnodeLED::new(
+        let mut led0 = rgb::CommonAnodeLED::new(r, g, b);
+        let mut led1 = rgb::CommonAnodeDiscreteLED::new(
             gpio.ph13.as_opendrain(),
             gpio.ph14.as_opendrain(),
             gpio.ph15.as_opendrain(),
         );
 
-        led0.set(Color::Black);
-        led1.set(Color::Black);
+        led0.set(Color {
+            red: 255,
+            green: 255,
+            blue: 255,
+        });
+        led1.set(DiscreteColor::Black);
 
         #[cfg(feature = "logging")]
         {
@@ -250,9 +289,14 @@ mod app {
             .random_seed(seed)
             .finalize();
 
-        let tcp_handle = interface.add_socket(TcpSocket::new(
-            TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
-            TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
+        let http_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.http_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.http_tx_payload.as_mut()),
+        ));
+
+        let websocket_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.websocket_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.websocket_tx_payload.as_mut()),
         ));
 
         let mut dhcp_socket = Dhcpv4Socket::new();
@@ -267,7 +311,8 @@ mod app {
                 led1,
                 network: network::Resources {
                     interface,
-                    tcp_handle,
+                    http_handle,
+                    websocket_handle,
                     dhcp_handle,
                 },
                 rtc: cx.device.RTC,
@@ -282,19 +327,20 @@ mod app {
         )
     }
 
-    #[task(capacity = 2, local = [spawn_handle], shared = [network, rtc])]
+    #[task(capacity = 2, local = [spawn_handle], shared = [led0, network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
         let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
         let spawn_handle = cx.local.spawn_handle;
         let mut network = cx.shared.network;
+        let mut led0 = cx.shared.led0;
 
         match network.lock(|network| network.interface.poll(timestamp)) {
             Ok(true) => {
                 log::trace!("Handling sockets...");
 
-                network.lock(|network| network.handle_sockets());
+                network.lock(|network| led0.lock(|led| network.handle_sockets(led)));
             }
             Ok(false) => log::trace!("Nothing to do"),
             Err(err) => log::error!("Failed to poll network interface: {}", err),
@@ -318,19 +364,11 @@ mod app {
 
     #[task(binds = ETH, shared = [network, led0, led1])]
     fn eth_irq(cx: eth_irq::Context) {
-        let eth_irq::SharedResources {
-            mut network,
-            mut led0,
-            mut led1,
-        } = cx.shared;
+        let mut network = cx.shared.network;
 
         interrupt::free(|_| {
             network.lock(|network| {
-                led0.lock(|led0| {
-                    led1.lock(|led1| {
-                        network.interface.device_mut().mac_irq(led0, led1);
-                    })
-                })
+                network.interface.device_mut().mac_irq();
             })
         });
 
@@ -361,8 +399,8 @@ fn DefaultHandler(irqn: i16) {
 
     log::error!("Default Handler: irq {}", irqn);
     let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(Color::Red);
-    led1.set(Color::Red);
+    led0.set(DiscreteColor::Red);
+    led1.set(DiscreteColor::Red);
 
     if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
@@ -379,8 +417,8 @@ fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     interrupt::disable();
 
     let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(Color::Red);
-    led1.set(Color::Red);
+    led0.set(DiscreteColor::Red);
+    led1.set(DiscreteColor::Red);
 
     if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
@@ -400,12 +438,12 @@ pub unsafe fn steal_leds() -> (LED0, LED1) {
     let periph = efm32gg11b820::Peripherals::steal();
     let gpio = periph.GPIO.split(periph.CMU.constrain().split().gpio);
 
-    let led0 = rgb::CommonAnodeLED::new(
+    let led0 = rgb::CommonAnodeDiscreteLED::new(
         gpio.ph10.as_opendrain(),
         gpio.ph11.as_opendrain(),
         gpio.ph12.as_opendrain(),
     );
-    let led1 = rgb::CommonAnodeLED::new(
+    let led1 = rgb::CommonAnodeDiscreteLED::new(
         gpio.ph13.as_opendrain(),
         gpio.ph14.as_opendrain(),
         gpio.ph15.as_opendrain(),

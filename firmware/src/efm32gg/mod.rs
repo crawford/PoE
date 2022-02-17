@@ -26,8 +26,6 @@ use efm32gg11b820::{self, Interrupt, ETH, NVIC};
 use efm32gg_hal::gpio::{pins, Input, Output};
 use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
 use ignore_result::Ignore;
-use led::rgb::{self, Color};
-use led::LED;
 use smoltcp::wire::EthernetAddress;
 use smoltcp::{self, phy, time, Error};
 
@@ -61,8 +59,8 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
         Ok((EFM32GG { mac, phy }, mac_addr))
     }
 
-    pub fn mac_irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
-        self.mac.irq(led0, led1)
+    pub fn mac_irq(&mut self) {
+        self.mac.irq()
     }
 
     pub fn phy_irq(&mut self) {
@@ -398,7 +396,7 @@ impl<'a> Mac<'a> {
         Some((start, len))
     }
 
-    pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
+    pub fn irq(&mut self) {
         let int = self.eth.ifcr.read();
 
         macro_rules! bit_str {
@@ -425,25 +423,20 @@ impl<'a> Mac<'a> {
         }
         if int.rxcmplt().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.rxcmplt().set_bit());
-            led1.set(Color::Green);
         }
         if int.rxoverrun().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.rxoverrun().set_bit());
-            led1.set(Color::Yellow);
             log::error!("RX Overrun Interrupt");
         }
         if int.txcmplt().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.txcmplt().set_bit());
-            led0.set(Color::Black);
         }
         if int.txunderrun().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.txunderrun().set_bit());
-            led0.set(Color::Yellow);
             log::error!("TX Underrun Interrupt");
         }
         if int.ambaerr().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.ambaerr().set_bit());
-            led0.set(Color::Yellow);
             log::error!("TX AMBA Error Interrupt");
         }
 
@@ -583,9 +576,6 @@ impl<'a> phy::RxToken for RxToken<'a> {
             dest += 1;
         }
 
-        let (_, mut led1) = unsafe { crate::steal_leds() };
-        led1.set(Color::Black);
-
         f(&mut data)
     }
 }
@@ -632,9 +622,6 @@ impl<'a> phy::TxToken for TxToken<'a> {
                 .networkctrl
                 .modify(|_, reg| reg.txstrt().set_bit());
         }
-
-        let (mut led0, _) = unsafe { crate::steal_leds() };
-        led0.set(Color::Green);
 
         Ok(result)
     }

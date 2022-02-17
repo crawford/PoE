@@ -14,9 +14,13 @@ efm32gg-hal = { git = "https://github.com/crawford/efm32gg-hal", branch = "efm32
 embedded-hal = "0.2.3"
 dwt-systick-monotonic = "1.0.0"
 ignore-result = "0.2.0"
-led = "0.2.0"
+led = { git = "https://github.com/crawford/led", branch = "rgb" }
 log = "0.4.8"
 smoltcp = { version = "0.8.0", default-features = false, features = [ "socket-dhcpv4", "socket-tcp" ] }
+
+[build-dependencies]
+chrono = "0.4.19"
+deflate = { version = "1.0.0", features = [ "gzip" ] }
 
 [profile.dev]
 opt-level = "s"
