@@ -10,7 +10,6 @@ let
     targets = [ "thumbv7m-none-eabi" ];
     extensions = [
       "clippy-preview"
-      "llvm-tools-preview"
       "rustfmt-preview"
       "rust-std"
     ];
@@ -18,6 +17,7 @@ let
 in
 mkShell {
   buildInputs = [
+    cargo-binutils
     fio
     rust
     sccache
