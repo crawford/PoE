@@ -376,6 +376,25 @@ impl<'a> Mac<'a> {
     pub fn irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
         let int = self.eth.ifcr.read();
 
+        macro_rules! bit_str {
+            ($reg:ident) => {
+                match int.$reg().bit_is_set() {
+                    true => concat!(" ", stringify!($reg)),
+                    false => "",
+                }
+            };
+        }
+
+        log::trace!(
+            "ETH IRQ:{}{}{}{}{}{}",
+            bit_str!(mngmntdone),
+            bit_str!(rxcmplt),
+            bit_str!(rxoverrun),
+            bit_str!(txcmplt),
+            bit_str!(txunderrun),
+            bit_str!(ambaerr),
+        );
+
         if int.mngmntdone().bit_is_set() {
             self.eth.ifcr.write(|reg| reg.mngmntdone().set_bit());
         }
