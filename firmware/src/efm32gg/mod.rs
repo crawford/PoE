@@ -15,8 +15,9 @@
 pub mod dma;
 
 use crate::mac;
-use crate::phy::{probe_for_phy, Phy, Register};
+use crate::phy::{probe_addr as probe_phy_addr, Phy, Register};
 use core::cmp;
+use core::convert::TryInto;
 use dma::{
     BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
     TxBufferDescriptor,
@@ -27,6 +28,7 @@ use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
 use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use led::LED;
+use smoltcp::wire::EthernetAddress;
 use smoltcp::{self, phy, time, Error};
 
 pub struct EFM32GG<'a, P: Phy> {
@@ -43,16 +45,20 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
         delay: &mut dyn DelayMs<u8>,
         pins: Pins,
         new_phy: F,
-    ) -> Result<EFM32GG<'a, P>, &'static str>
+    ) -> Result<(EFM32GG<'a, P>, EthernetAddress), &'static str>
     where
-        F: FnOnce(u8) -> P,
+        F: FnOnce(u8, &mut dyn mac::Mdio) -> P,
     {
-        let mut mac = Mac::new(rx_buffer, tx_buffer, eth, delay, pins);
-        let mut phy = new_phy(probe_for_phy(&mac).ok_or("Failed to find PHY")?);
-        log::debug!("OUI: {}", phy.oui(&mac));
-        phy.enable_interrupts(&mut mac);
+        let mut mdio = Mdio::new(eth, delay, pins);
+        let phy_addr = probe_phy_addr(&mdio).ok_or("Failed to find PHY")?;
+        let phy = new_phy(phy_addr, &mut mdio);
+        let oui = phy.oui(&mdio);
+        log::debug!("OUI: {}", oui);
 
-        Ok(EFM32GG { mac, phy })
+        let (mac, addr) = Mac::new(mdio, rx_buffer, tx_buffer);
+        log::debug!("MAC/PHY initialized");
+
+        Ok((EFM32GG { mac, phy }, addr))
     }
 
     pub fn mac_irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
@@ -62,6 +68,10 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
     pub fn phy_irq(&mut self) {
         self.phy.irq(&mut self.mac);
     }
+}
+
+struct Mdio {
+    eth: ETH,
 }
 
 struct Mac<'a> {
@@ -85,16 +95,11 @@ pub struct Pins {
     pub phy_enable: pins::PI10<Output>,
 }
 
-impl<'a> Mac<'a> {
-    /// This assumes that the PHY will be interfaced via RMII with the EFM providing the ethernet
-    /// clock.
-    fn new(
-        rx_buffer: RxBuffer<'a>,
-        tx_buffer: TxBuffer<'a>,
-        eth: ETH,
-        delay: &mut dyn DelayMs<u8>,
-        mut pins: Pins,
-    ) -> Mac<'a> {
+impl Mdio {
+    /// Initialize the MDIO
+    ///
+    /// Note: This assumes the PHY will be interfaced via RMII, with the EFM providing the clock.
+    fn new(eth: ETH, delay: &mut dyn DelayMs<u8>, mut pins: Pins) -> Mdio {
         let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
 
         // Enable the HFPER clock and source CLKOUT2 from HFXO
@@ -139,6 +144,29 @@ impl<'a> Mac<'a> {
             reg
         });
 
+        // Enable the management interface
+        eth.networkctrl.write(|reg| reg.manporten().set_bit());
+
+        // Wait for the PHY's supply to stabilize and for it to initialize
+        delay.delay_ms(10);
+
+        // Release the PHY reset
+        pins.phy_reset.set_high().ignore();
+
+        Mdio { eth }
+    }
+}
+
+impl<'a> Mac<'a> {
+    /// Fully initializes the MAC, starting from the initialized MDIO
+    fn new(
+        mdio: Mdio,
+        rx_buffer: RxBuffer<'a>,
+        tx_buffer: TxBuffer<'a>,
+    ) -> (Mac<'a>, EthernetAddress) {
+        let addr = [0x02, 0x00, 0x00, 0x00, 0x00, 0x02];
+        let eth = mdio.eth;
+
         // Set the RX buffer size to 128 bytes
         eth.dmacfg.write(|reg| {
             unsafe { reg.rxbufsize().bits(128 / 64) };
@@ -158,10 +186,14 @@ impl<'a> Mac<'a> {
             .write(|reg| unsafe { reg.dmatxqptr().bits(tx_buffer.address() as u32 >> 2) });
 
         // Set the hardware address filter, starting with the bottom register first
-        eth.specaddr1bottom
-            .write(|reg| unsafe { reg.addr().bits(0x00_00_00_02) });
-        eth.specaddr1top
-            .write(|reg| unsafe { reg.addr().bits(0x00_00_02_00) });
+        eth.specaddr1bottom.write(|reg| unsafe {
+            reg.addr()
+                .bits(u32::from_be_bytes(addr[0..4].try_into().unwrap()).swap_bytes())
+        });
+        eth.specaddr1top.write(|reg| unsafe {
+            reg.addr()
+                .bits(u16::from_be_bytes(addr[4..6].try_into().unwrap()).swap_bytes())
+        });
 
         // Clear pending interrupts
         NVIC::unpend(Interrupt::ETH);
@@ -229,28 +261,24 @@ impl<'a> Mac<'a> {
             NVIC::unmask(Interrupt::ETH);
         }
 
-        // Enable transmitting/receiving and the management interface
-        eth.networkctrl.write(|reg| {
-            reg.enbrx().set_bit();
-            reg.enbtx().set_bit();
-            reg.manporten().set_bit();
-            reg
+        // Enable transmitting/receiving
+        eth.networkctrl.modify(|_, w| {
+            w.enbrx().set_bit();
+            w.enbtx().set_bit();
+            w
         });
-
-        // Wait for the PHY's supply to stabilize and for it to initialize
-        delay.delay_ms(10);
-
-        // Release the PHY reset
-        pins.phy_reset.set_high().ignore();
 
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
 
-        Mac {
-            rx_buffer,
-            tx_buffer,
-            eth,
-        }
+        (
+            Mac {
+                rx_buffer,
+                tx_buffer,
+                eth,
+            },
+            EthernetAddress(addr),
+        )
     }
 
     fn find_rx_window(&self) -> Option<(usize, usize)> {
@@ -436,40 +464,58 @@ impl<'a> Mac<'a> {
     }
 }
 
-impl<'a> mac::Mac for Mac<'a> {
-    fn mdio_read(&self, address: u8, register: Register) -> u16 {
-        self.eth.phymngmnt.write(|reg| {
-            unsafe { reg.phyaddr().bits(address) };
-            unsafe { reg.phyrwdata().bits(0x00) };
-            unsafe { reg.regaddr().bits(register.into()) };
-            unsafe { reg.operation().bits(0b10) };
-
-            unsafe { reg.write10().bits(0b10) };
-            reg.write1().set_bit();
-            reg.write0().clear_bit();
-            reg
-        });
-
-        while self.eth.networkstatus.read().mandone().bit_is_clear() {}
-
-        self.eth.phymngmnt.read().phyrwdata().bits()
+impl mac::Mdio for Mdio {
+    fn read(&self, address: u8, register: Register) -> u16 {
+        mdio_read(&self.eth, address, register)
     }
 
-    fn mdio_write(&mut self, address: u8, register: Register, data: u16) {
-        self.eth.phymngmnt.write(|reg| {
-            unsafe { reg.phyaddr().bits(address) };
-            unsafe { reg.phyrwdata().bits(data) };
-            unsafe { reg.regaddr().bits(register.into()) };
-            unsafe { reg.operation().bits(0b01) };
-
-            unsafe { reg.write10().bits(0b10) };
-            reg.write1().set_bit();
-            reg.write0().clear_bit();
-            reg
-        });
-
-        while self.eth.networkstatus.read().mandone().bit_is_clear() {}
+    fn write(&mut self, address: u8, register: Register, data: u16) {
+        mdio_write(&mut self.eth, address, register, data)
     }
+}
+
+impl mac::Mdio for Mac<'_> {
+    fn read(&self, address: u8, register: Register) -> u16 {
+        mdio_read(&self.eth, address, register)
+    }
+
+    fn write(&mut self, address: u8, register: Register, data: u16) {
+        mdio_write(&mut self.eth, address, register, data)
+    }
+}
+
+fn mdio_read(eth: &ETH, address: u8, register: Register) -> u16 {
+    eth.phymngmnt.write(|reg| {
+        unsafe { reg.phyaddr().bits(address) };
+        unsafe { reg.phyrwdata().bits(0x00) };
+        unsafe { reg.regaddr().bits(register.into()) };
+        unsafe { reg.operation().bits(0b10) };
+
+        unsafe { reg.write10().bits(0b10) };
+        reg.write1().set_bit();
+        reg.write0().clear_bit();
+        reg
+    });
+
+    while eth.networkstatus.read().mandone().bit_is_clear() {}
+
+    eth.phymngmnt.read().phyrwdata().bits()
+}
+
+fn mdio_write(eth: &mut ETH, address: u8, register: Register, data: u16) {
+    eth.phymngmnt.write(|reg| {
+        unsafe { reg.phyaddr().bits(address) };
+        unsafe { reg.phyrwdata().bits(data) };
+        unsafe { reg.regaddr().bits(register.into()) };
+        unsafe { reg.operation().bits(0b01) };
+
+        unsafe { reg.write10().bits(0b10) };
+        reg.write1().set_bit();
+        reg.write0().clear_bit();
+        reg
+    });
+
+    while eth.networkstatus.read().mandone().bit_is_clear() {}
 }
 
 impl<'a, P: Phy> phy::Device<'a> for EFM32GG<'_, P> {

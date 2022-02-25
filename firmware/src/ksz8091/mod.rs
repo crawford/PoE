@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mac::Mac;
+use crate::mac::Mdio;
 use crate::phy::{LinkState, Oui, Phy, Register};
 
 pub struct KSZ8091 {
@@ -20,39 +20,37 @@ pub struct KSZ8091 {
 }
 
 impl KSZ8091 {
-    pub fn new(address: u8) -> KSZ8091 {
+    pub fn new(address: u8, mdio: &mut dyn Mdio) -> KSZ8091 {
+        // Enable interrupts for link-up and link-down
+        mdio.write(address, Register::Vendor(0x1B), 0x0500);
+
         KSZ8091 { address }
     }
 }
 
 impl Phy for KSZ8091 {
-    fn oui(&self, mac: &dyn Mac) -> Oui {
+    fn oui(&self, mdio: &dyn Mdio) -> Oui {
         // Bits [2:17] of the Oui are in bits [15:0] of PHY ID 1.
         // Bits [18:23] of the Oui are in bits [15:10] of PHY ID 2.
         // Concatenating these two gives the Oui in bit-reverse order
         // (e.g. 0b00 [2:17] [18:23] 0000 0000).
-        let id1 = u32::from(mac.mdio_read(self.address, Register::PhyId1));
-        let id2 = u32::from(mac.mdio_read(self.address, Register::PhyId2));
+        let id1 = u32::from(mdio.read(self.address, Register::PhyId1));
+        let id2 = u32::from(mdio.read(self.address, Register::PhyId2));
 
         let oui = u32::reverse_bits(id1 << 14 | id2 >> 2);
         Oui([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
     }
 
-    fn link_state(&self, _mac: &dyn Mac) -> LinkState {
+    fn link_state(&self, _mdio: &dyn Mdio) -> LinkState {
         unimplemented!()
     }
 
-    fn set_link_state(&mut self, _mac: &dyn Mac, _state: LinkState) {
+    fn set_link_state(&mut self, _mdio: &dyn Mdio, _state: LinkState) {
         unimplemented!()
     }
 
-    /// Enable interrupts for link-up and link-down
-    fn enable_interrupts(&mut self, mac: &mut dyn Mac) {
-        mac.mdio_write(self.address, Register::Vendor(0x1B), 0x0500);
-    }
-
-    fn irq(&mut self, mac: &mut dyn Mac) {
-        let status = mac.mdio_read(self.address, Register::Vendor(0x1B)) as u8;
+    fn irq(&mut self, mdio: &mut dyn Mdio) {
+        let status = mdio.read(self.address, Register::Vendor(0x1B)) as u8;
 
         macro_rules! bit_str {
             ($pos:literal, $str:expr) => {

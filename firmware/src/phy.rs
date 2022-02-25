@@ -14,15 +14,14 @@
 
 // XXX: Figure out error handling
 
-use crate::mac::Mac;
+use crate::mac::Mdio;
 use core::fmt;
 
 pub trait Phy {
-    fn oui(&self, mac: &dyn Mac) -> Oui;
-    fn link_state(&self, mac: &dyn Mac) -> LinkState;
-    fn set_link_state(&mut self, mac: &dyn Mac, state: LinkState);
-    fn enable_interrupts(&mut self, mac: &mut dyn Mac);
-    fn irq(&mut self, mac: &mut dyn Mac);
+    fn oui(&self, mac: &dyn Mdio) -> Oui;
+    fn link_state(&self, mac: &dyn Mdio) -> LinkState;
+    fn set_link_state(&mut self, mac: &dyn Mdio, state: LinkState);
+    fn irq(&mut self, mac: &mut dyn Mdio);
 }
 
 #[allow(unused)]
@@ -85,10 +84,10 @@ impl From<Register> for u8 {
     }
 }
 
-pub fn probe_for_phy<M: Mac>(mac: &M) -> Option<u8> {
+pub fn probe_addr<M: Mdio>(mdio: &M) -> Option<u8> {
     (0..32).find(|addr| {
-        let id1 = mac.mdio_read(*addr, Register::PhyId1);
-        let id2 = mac.mdio_read(*addr, Register::PhyId2);
+        let id1 = mdio.read(*addr, Register::PhyId1);
+        let id2 = mdio.read(*addr, Register::PhyId2);
 
         id1 != 0x0000 && id1 != 0x3FFF && id2 != 0x0000 && id2 != 0xFFFF
             || id1 != 0x0000 && id1 != 0x3FFF && id1 != 0xFFFF

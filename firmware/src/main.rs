@@ -51,7 +51,7 @@ mod app {
     use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
     use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::{Duration, Instant};
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
+    use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
 
     #[monotonic(binds = SysTick, default = true)]
     type Monotonic = dwt_systick_monotonic::DwtSystick<50_000_000>; // 50 MHz
@@ -213,43 +213,42 @@ mod app {
         };
 
         let mut delay = Delay::new(cx.core.SYST, 50_000_000);
-        let mut interface = InterfaceBuilder::new(
-            efm32gg::EFM32GG::new(
-                dma::RxBuffer::new(
-                    Pin::new(cx.local.eth_rx_region),
-                    Pin::new(cx.local.eth_rx_descriptors),
-                ),
-                dma::TxBuffer::new(
-                    Pin::new(cx.local.eth_tx_region),
-                    Pin::new(cx.local.eth_tx_descriptors),
-                ),
-                cx.device.ETH,
-                &mut delay,
-                efm32gg::Pins {
-                    rmii_rxd0: gpio.pd9.as_input(),
-                    rmii_refclk: gpio.pd10.as_output(),
-                    rmii_crsdv: gpio.pd11.as_input(),
-                    rmii_rxer: gpio.pd12.as_input(),
-                    rmii_mdio: gpio.pd13.as_output(),
-                    rmii_mdc: gpio.pd14.as_output(),
-                    rmii_txd0: gpio.pf6.as_output(),
-                    rmii_txd1: gpio.pf7.as_output(),
-                    rmii_txen: gpio.pf8.as_output(),
-                    rmii_rxd1: gpio.pf9.as_input(),
-                    phy_reset: gpio.ph7.as_output(),
-                    phy_enable: gpio.pi10.as_output(),
-                },
-                KSZ8091::new,
-            )
-            .expect("unable to create MACPHY"),
-            cx.local.sockets.as_mut(),
+        let (mac_phy, mac_addr) = efm32gg::EFM32GG::new(
+            dma::RxBuffer::new(
+                Pin::new(cx.local.eth_rx_region),
+                Pin::new(cx.local.eth_rx_descriptors),
+            ),
+            dma::TxBuffer::new(
+                Pin::new(cx.local.eth_tx_region),
+                Pin::new(cx.local.eth_tx_descriptors),
+            ),
+            cx.device.ETH,
+            &mut delay,
+            efm32gg::Pins {
+                rmii_rxd0: gpio.pd9.as_input(),
+                rmii_refclk: gpio.pd10.as_output(),
+                rmii_crsdv: gpio.pd11.as_input(),
+                rmii_rxer: gpio.pd12.as_input(),
+                rmii_mdio: gpio.pd13.as_output(),
+                rmii_mdc: gpio.pd14.as_output(),
+                rmii_txd0: gpio.pf6.as_output(),
+                rmii_txd1: gpio.pf7.as_output(),
+                rmii_txen: gpio.pf8.as_output(),
+                rmii_rxd1: gpio.pf9.as_input(),
+                phy_reset: gpio.ph7.as_output(),
+                phy_enable: gpio.pi10.as_output(),
+            },
+            KSZ8091::new,
         )
-        .hardware_addr(EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]).into())
-        .neighbor_cache(NeighborCache::new(cx.local.neighbors.as_mut()))
-        .ip_addrs(cx.local.ip_addresses.as_mut())
-        .routes(Routes::new(cx.local.routes.as_mut()))
-        .random_seed(seed)
-        .finalize();
+        .expect("unable to create MAC/PHY");
+
+        let mut interface = InterfaceBuilder::new(mac_phy, cx.local.sockets.as_mut())
+            .hardware_addr(mac_addr.into())
+            .neighbor_cache(NeighborCache::new(cx.local.neighbors.as_mut()))
+            .ip_addrs(cx.local.ip_addresses.as_mut())
+            .routes(Routes::new(cx.local.routes.as_mut()))
+            .random_seed(seed)
+            .finalize();
 
         let tcp_handle = interface.add_socket(TcpSocket::new(
             TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
