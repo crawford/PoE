@@ -53,12 +53,12 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
         let phy_addr = probe_phy_addr(&mdio).ok_or("Failed to find PHY")?;
         let phy = new_phy(phy_addr, &mut mdio);
         let oui = phy.oui(&mdio);
-        log::debug!("OUI: {}", oui);
+        let mac_addr = EthernetAddress([oui.0[0], oui.0[1], oui.0[2], 0x00, 0x00, 0x01]);
+        let mac = Mac::new(mdio, mac_addr, rx_buffer, tx_buffer);
 
-        let (mac, addr) = Mac::new(mdio, rx_buffer, tx_buffer);
-        log::debug!("MAC/PHY initialized");
+        log::debug!("MAC/PHY initialized ({}/{})", mac_addr, phy_addr);
 
-        Ok((EFM32GG { mac, phy }, addr))
+        Ok((EFM32GG { mac, phy }, mac_addr))
     }
 
     pub fn mac_irq(&mut self, led0: &mut dyn rgb::RGB, led1: &mut dyn rgb::RGB) {
@@ -161,10 +161,10 @@ impl<'a> Mac<'a> {
     /// Fully initializes the MAC, starting from the initialized MDIO
     fn new(
         mdio: Mdio,
+        addr: EthernetAddress,
         rx_buffer: RxBuffer<'a>,
         tx_buffer: TxBuffer<'a>,
-    ) -> (Mac<'a>, EthernetAddress) {
-        let addr = [0x02, 0x00, 0x00, 0x00, 0x00, 0x02];
+    ) -> Mac<'a> {
         let eth = mdio.eth;
 
         // Set the RX buffer size to 128 bytes
@@ -188,11 +188,11 @@ impl<'a> Mac<'a> {
         // Set the hardware address filter, starting with the bottom register first
         eth.specaddr1bottom.write(|reg| unsafe {
             reg.addr()
-                .bits(u32::from_be_bytes(addr[0..4].try_into().unwrap()).swap_bytes())
+                .bits(u32::from_be_bytes(addr.0[0..4].try_into().unwrap()).swap_bytes())
         });
         eth.specaddr1top.write(|reg| unsafe {
             reg.addr()
-                .bits(u16::from_be_bytes(addr[4..6].try_into().unwrap()).swap_bytes())
+                .bits(u16::from_be_bytes(addr.0[4..6].try_into().unwrap()).swap_bytes())
         });
 
         // Clear pending interrupts
@@ -271,14 +271,11 @@ impl<'a> Mac<'a> {
         // Enable the global clock
         eth.ctrl.write(|reg| reg.gblclken().set_bit());
 
-        (
-            Mac {
-                rx_buffer,
-                tx_buffer,
-                eth,
-            },
-            EthernetAddress(addr),
-        )
+        Mac {
+            rx_buffer,
+            tx_buffer,
+            eth,
+        }
     }
 
     fn find_rx_window(&self) -> Option<(usize, usize)> {
