@@ -1,6 +1,3 @@
 target/**
-itm.fifo
+log.itm
 openocd.log
-*.rs.bk
-*.swo
-*.swp
