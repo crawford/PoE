@@ -1,5 +1,5 @@
-*-cache.lib
-*.kicad_pcb-bak
-*.bak
-*.bck
-*.dcm
+chassis-backups/
+chassis.bak
+chassis.kicad_prl
+fp-info-cache
+_autosave-*
