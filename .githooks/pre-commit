@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=$(git hash-object -t tree /dev/null)
+fi
+
+if test $(git diff --cached $against | grep -e '/Users' -e '/home' -e '?:/Users')
+then
+    cat <<\EOF
+Error: Attempt to add reference to absolute path.
+
+This path may not be resolvable on another machine.
+Make the path relative to the project instead.
+EOF
+    exit 1
+fi
