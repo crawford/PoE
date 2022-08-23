@@ -6562,7 +6562,7 @@
     (in_bom yes) (on_board yes)
     (uuid 02e378bb-a850-4b7f-8f17-6b13b375af50)
     (property "Reference" "R7" (id 0) (at 52.07 55.88 90))
-    (property "Value" "R_Trim" (id 1) (at 57.15 52.07 90)
+    (property "Value" "0-200k" (id 1) (at 57.15 52.07 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Footprint" "" (id 2) (at 57.15 58.928 90)
@@ -6632,7 +6632,7 @@
     (in_bom yes) (on_board yes)
     (uuid 129986a3-7352-47a6-b6c6-91da1164e5f6)
     (property "Reference" "R9" (id 0) (at 52.07 60.96 90))
-    (property "Value" "R_Trim" (id 1) (at 57.15 57.15 90)
+    (property "Value" "0-200k" (id 1) (at 57.15 57.15 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Footprint" "" (id 2) (at 57.15 64.008 90)
@@ -6792,7 +6792,7 @@
     (in_bom yes) (on_board yes)
     (uuid 5a2c61f0-c5fd-40b6-b9e5-647b7568be4c)
     (property "Reference" "R8" (id 0) (at 52.07 58.42 90))
-    (property "Value" "R_Trim" (id 1) (at 57.15 54.61 90)
+    (property "Value" "0-200k" (id 1) (at 57.15 54.61 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Footprint" "" (id 2) (at 57.15 61.468 90)
@@ -7267,13 +7267,13 @@
       (reference "R6") (unit 1) (value "10") (footprint "Resistor_SMD:R_0402_1005Metric")
     )
     (path "/02e378bb-a850-4b7f-8f17-6b13b375af50"
-      (reference "R7") (unit 1) (value "R_Trim") (footprint "")
+      (reference "R7") (unit 1) (value "0-200k") (footprint "")
     )
     (path "/5a2c61f0-c5fd-40b6-b9e5-647b7568be4c"
-      (reference "R8") (unit 1) (value "R_Trim") (footprint "")
+      (reference "R8") (unit 1) (value "0-200k") (footprint "")
     )
     (path "/129986a3-7352-47a6-b6c6-91da1164e5f6"
-      (reference "R9") (unit 1) (value "R_Trim") (footprint "")
+      (reference "R9") (unit 1) (value "0-200k") (footprint "")
     )
     (path "/00000000-0000-0000-0000-00005c50e979"
       (reference "R10") (unit 1) (value "4R7") (footprint "Resistor_SMD:R_0402_1005Metric")
