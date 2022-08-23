@@ -5224,6 +5224,7 @@
     (property "Datasheet" "~" (id 3) (at 127 50.8 0)
       (effects (font (size 1.27 1.27)) hide)
     )
+    (property "Voltage" "25V" (id 4) (at 132.08 54.61 0))
     (pin "1" (uuid 5ee16605-36b8-4feb-961e-c247600a5888))
     (pin "2" (uuid ec42be06-47a6-403e-8e81-624c6b6d262a))
   )
