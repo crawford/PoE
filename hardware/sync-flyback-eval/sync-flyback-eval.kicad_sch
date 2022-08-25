@@ -5233,7 +5233,7 @@
     (uuid 00000000-0000-0000-0000-00005c50ea6b)
     (property "Reference" "C15" (id 0) (at 190.5 50.8 90))
     (property "Value" "2n2" (id 1) (at 190.5 53.0606 90))
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (id 2) (at 186.69 58.1152 0)
+    (property "Footprint" "Capacitor_THT:C_Disc_D10.0mm_W2.5mm_P5.00mm" (id 2) (at 186.69 58.1152 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (id 3) (at 190.5 57.15 0)
@@ -7353,7 +7353,7 @@
       (reference "C14") (unit 1) (value "0u1") (footprint "Capacitor_SMD:C_0402_1005Metric")
     )
     (path "/00000000-0000-0000-0000-00005c50ea6b"
-      (reference "C15") (unit 1) (value "2n2") (footprint "Capacitor_SMD:C_0402_1005Metric")
+      (reference "C15") (unit 1) (value "2n2") (footprint "Capacitor_THT:C_Disc_D10.0mm_W2.5mm_P5.00mm")
     )
     (path "/121ad5d1-d98c-400b-a918-25f7012138ea"
       (reference "C16") (unit 1) (value "1u") (footprint "Capacitor_SMD:C_0402_1005Metric")
