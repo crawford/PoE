@@ -4952,7 +4952,7 @@
     (property "Value" "D_Zener" (id 1) (at 27.4066 54.483 90)
       (effects (font (size 1.27 1.27)) (justify left) hide)
     )
-    (property "Footprint" "Diode_SMD:D_0402_1005Metric" (id 2) (at 25.4 53.34 0)
+    (property "Footprint" "Diode_SMD:D_SMA" (id 2) (at 25.4 53.34 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (id 3) (at 25.4 53.34 0)
@@ -5167,7 +5167,7 @@
     (uuid 00000000-0000-0000-0000-00005c2c2030)
     (property "Reference" "R6" (id 0) (at 158.75 49.7078 90))
     (property "Value" "10" (id 1) (at 158.75 47.3964 90))
-    (property "Footprint" "Resistor_SMD:R_0402_1005Metric" (id 2) (at 158.75 46.228 90)
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (id 2) (at 158.75 46.228 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (id 3) (at 158.75 44.45 0)
@@ -5583,7 +5583,7 @@
     (uuid 00000000-0000-0000-0000-00005d1f72be)
     (property "Reference" "R3" (id 0) (at 217.17 34.1122 90))
     (property "Value" "10" (id 1) (at 217.17 36.4236 90))
-    (property "Footprint" "Resistor_SMD:R_0402_1005Metric" (id 2) (at 217.17 37.592 90)
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric" (id 2) (at 217.17 37.592 90)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (id 3) (at 217.17 39.37 0)
@@ -7475,7 +7475,7 @@
       (reference "D2") (unit 1) (value "D") (footprint "Diode_SMD:D_SOD-323")
     )
     (path "/00000000-0000-0000-0000-00005c00f7a7"
-      (reference "D3") (unit 1) (value "D_Zener") (footprint "Diode_SMD:D_0402_1005Metric")
+      (reference "D3") (unit 1) (value "D_Zener") (footprint "Diode_SMD:D_SMA")
     )
     (path "/00000000-0000-0000-0000-00005be59e54"
       (reference "D4") (unit 1) (value "D_Bridge_+-AA") (footprint "Diode_SMD:Diode_Bridge_Diotec_ABS")
@@ -7526,7 +7526,7 @@
       (reference "R2") (unit 1) (value "39K") (footprint "Resistor_SMD:R_0805_2012Metric")
     )
     (path "/00000000-0000-0000-0000-00005d1f72be"
-      (reference "R3") (unit 1) (value "10") (footprint "Resistor_SMD:R_0402_1005Metric")
+      (reference "R3") (unit 1) (value "10") (footprint "Resistor_SMD:R_0805_2012Metric")
     )
     (path "/00000000-0000-0000-0000-00005e5b1c5f"
       (reference "R4") (unit 1) (value "1k2") (footprint "Resistor_SMD:R_0402_1005Metric")
@@ -7535,7 +7535,7 @@
       (reference "R5") (unit 1) (value "39k7") (footprint "Resistor_SMD:R_0402_1005Metric")
     )
     (path "/00000000-0000-0000-0000-00005c2c2030"
-      (reference "R6") (unit 1) (value "10") (footprint "Resistor_SMD:R_0402_1005Metric")
+      (reference "R6") (unit 1) (value "10") (footprint "Resistor_SMD:R_0805_2012Metric")
     )
     (path "/4ede36d6-f7e9-4a55-b79f-e40a3ba5a33e"
       (reference "R7") (unit 1) (value "10m") (footprint "Resistor_SMD:R_0402_1005Metric")
