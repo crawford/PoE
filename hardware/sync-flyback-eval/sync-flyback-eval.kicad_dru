@@ -1,0 +1,5 @@
+(version 1)
+
+(rule HighVoltage
+  (constraint clearance (min 0.025in))
+  (condition "A.NetClass == 'Primary' && B.NetClass != 'Primary Tolerant'"))

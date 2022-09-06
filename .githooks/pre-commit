@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+unset GIT_LITERAL_PATHSPECS
+
 if git rev-parse --verify HEAD >/dev/null 2>&1
 then
 	against=HEAD
@@ -8,13 +10,23 @@ else
 	against=$(git hash-object -t tree /dev/null)
 fi
 
-if test $(git diff --cached $against | grep -e '/Users' -e '/home' -e '?:/Users')
+if git diff --cached $against | grep -e '/Users' -e '/home' >/dev/null 2>&1
 then
     cat <<\EOF
 Error: Attempt to add reference to absolute path.
 
 This path may not be resolvable on another machine.
 Make the path relative to the project instead.
+EOF
+    exit 1
+fi
+
+if git diff --cached $against 'hardware/*kicad_sch' | grep 'reference.*\?' > /dev/null 2>&1
+then
+    cat <<\EOF
+Error: Attempt to add unannotated part
+
+Make sure to add reference designators to all parts in the schematic.
 EOF
     exit 1
 fi
