@@ -83,6 +83,8 @@
     )
   )
 
+  (property "REV" "A")
+
   (net 0 "")
   (net 1 "GNDA")
   (net 2 "Net-(C3-Pad1)")
