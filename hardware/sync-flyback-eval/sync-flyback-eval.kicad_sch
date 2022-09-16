@@ -5974,7 +5974,7 @@
     (uuid 00000000-0000-0000-0000-00005dad1b8a)
     (property "Reference" "T1" (id 0) (at 187.96 19.5326 0))
     (property "Value" "PoE_Transformer" (id 1) (at 187.96 21.844 0))
-    (property "Footprint" "common:POE_EP13" (id 2) (at 187.96 49.53 0)
+    (property "Footprint" "common:WE-PoE+" (id 2) (at 187.96 49.53 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "" (id 3) (at 187.96 34.29 0)
@@ -6489,7 +6489,7 @@
     (uuid 00000000-0000-0000-0000-00005ef704e4)
     (property "Reference" "T2" (id 0) (at 193.04 67.7926 0))
     (property "Value" "Pulse_Transformer" (id 1) (at 193.04 70.104 0))
-    (property "Footprint" "common:GDTI_EP7" (id 2) (at 193.04 77.47 0)
+    (property "Footprint" "common:WE-GDTI" (id 2) (at 193.04 77.47 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (id 3) (at 193.04 77.47 0)
@@ -7627,10 +7627,10 @@
       (reference "RV4") (unit 1) (value "0-200k") (footprint "common:TRIM_3306F-1-204")
     )
     (path "/00000000-0000-0000-0000-00005dad1b8a"
-      (reference "T1") (unit 1) (value "PoE_Transformer") (footprint "common:POE_EP13")
+      (reference "T1") (unit 1) (value "PoE_Transformer") (footprint "common:WE-PoE+")
     )
     (path "/00000000-0000-0000-0000-00005ef704e4"
-      (reference "T2") (unit 1) (value "Pulse_Transformer") (footprint "common:GDTI_EP7")
+      (reference "T2") (unit 1) (value "Pulse_Transformer") (footprint "common:WE-GDTI")
     )
     (path "/00000000-0000-0000-0000-00005e1b9e90"
       (reference "TP1") (unit 1) (value "TestPoint") (footprint "TestPoint:TestPoint_Pad_1.5x1.5mm")
