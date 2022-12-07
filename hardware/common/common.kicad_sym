@@ -117,7 +117,7 @@
         (number "2" (effects (font (size 1.27 1.27))))
       )
       (pin input inverted (at 30.48 -12.7 180) (length 2.54)
-        (name "RESETn" (effects (font (size 1.27 1.27))))
+        (name "RESET" (effects (font (size 1.27 1.27))))
         (number "20" (effects (font (size 1.27 1.27))))
       )
       (pin bidirectional line (at -30.48 0 0) (length 2.54)
