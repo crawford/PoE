@@ -4796,7 +4796,7 @@
     (property "Reference" "TP5" (id 0) (at 255.27 133.35 0)
       (effects (font (size 1.27 1.27)) (justify right))
     )
-    (property "Value" "GND" (id 1) (at 253.873 134.9248 90)
+    (property "Value" "3V3" (id 1) (at 253.873 134.9248 90)
       (effects (font (size 1.27 1.27)) (justify left) hide)
     )
     (property "Footprint" "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded" (id 2) (at 257.81 139.7 0)
@@ -4814,7 +4814,7 @@
     (property "Reference" "TP3" (id 0) (at 179.07 127 0)
       (effects (font (size 1.27 1.27)) (justify right))
     )
-    (property "Value" "12V" (id 1) (at 180.467 125.4252 90)
+    (property "Value" "VSS" (id 1) (at 180.467 125.4252 90)
       (effects (font (size 1.27 1.27)) (justify left) hide)
     )
     (property "Footprint" "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded" (id 2) (at 176.53 120.65 0)
@@ -5814,7 +5814,7 @@
     (in_bom yes) (on_board yes)
     (uuid 6f6d20a5-826b-4b81-bdd1-fceaa2b970c2)
     (property "Reference" "TP2" (id 0) (at 181.61 89.535 0))
-    (property "Value" "VB" (id 1) (at 182.753 90.4748 90)
+    (property "Value" "VDD" (id 1) (at 182.753 90.4748 90)
       (effects (font (size 1.27 1.27)) (justify left) hide)
     )
     (property "Footprint" "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded" (id 2) (at 186.69 95.25 0)
@@ -7547,16 +7547,16 @@
       (reference "TP1") (unit 1) (value "GND") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
     )
     (path "/6f6d20a5-826b-4b81-bdd1-fceaa2b970c2"
-      (reference "TP2") (unit 1) (value "VB") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
+      (reference "TP2") (unit 1) (value "VDD") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
     )
     (path "/0f41e8ee-d677-4198-a5d1-8c2a582d292e"
-      (reference "TP3") (unit 1) (value "12V") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
+      (reference "TP3") (unit 1) (value "VSS") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
     )
     (path "/13215c1d-73d1-47c4-86e8-93ec70674c3e"
       (reference "TP4") (unit 1) (value "EARTH") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
     )
     (path "/0df6d917-84df-40b5-b173-fe738754d239"
-      (reference "TP5") (unit 1) (value "GND") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
+      (reference "TP5") (unit 1) (value "3V3") (footprint "TestPoint:TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded")
     )
     (path "/20bbebde-9b3d-4535-896f-7dc21cb46df2"
       (reference "TR1") (unit 1) (value "PT61017PEL") (footprint "common:PT61017PEL")
