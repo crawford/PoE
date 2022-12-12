@@ -4659,22 +4659,6 @@
     (pin "2" (uuid f6b5d631-813f-4002-8a0f-7ac4399f4143))
   )
 
-  (symbol (lib_id "power:VSS") (at 148.59 181.61 180) (unit 1)
-    (in_bom yes) (on_board yes) (fields_autoplaced)
-    (uuid 089f1e7c-a914-4a38-88f3-88413ac75afc)
-    (property "Reference" "#PWR053" (id 0) (at 148.59 177.8 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Value" "VSS" (id 1) (at 148.59 186.69 0))
-    (property "Footprint" "" (id 2) (at 148.59 181.61 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "" (id 3) (at 148.59 181.61 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (pin "1" (uuid b86c5bf8-e2bf-4b58-84c1-8c9b8fb541c6))
-  )
-
   (symbol (lib_id "Device:R_US") (at 194.31 63.5 0) (unit 1)
     (in_bom yes) (on_board yes)
     (uuid 0b3d7ab2-cc47-43f4-b9ea-6e1be0662e35)
@@ -6776,6 +6760,22 @@
     (pin "1" (uuid bb13449b-6741-4617-9081-4084c11bea1c))
   )
 
+  (symbol (lib_id "power:GND") (at 148.59 181.61 0) (unit 1)
+    (in_bom yes) (on_board yes) (fields_autoplaced)
+    (uuid daad9d13-ecc0-4c91-9861-8f109eef8381)
+    (property "Reference" "#PWR0101" (id 0) (at 148.59 187.96 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Value" "GND" (id 1) (at 148.59 186.69 0))
+    (property "Footprint" "" (id 2) (at 148.59 181.61 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "" (id 3) (at 148.59 181.61 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (pin "1" (uuid 8c7cdc40-5ef9-40f9-817a-4e07a8f033b9))
+  )
+
   (symbol (lib_id "power:GND") (at 113.03 41.91 0) (unit 1)
     (in_bom yes) (on_board yes)
     (uuid dd9a6192-07f2-48d4-8d0c-ad745b712e55)
@@ -7241,8 +7241,8 @@
     (path "/a5bd72c6-3643-4aeb-b0f5-5ce5f76572a9"
       (reference "#PWR052") (unit 1) (value "VDD") (footprint "")
     )
-    (path "/089f1e7c-a914-4a38-88f3-88413ac75afc"
-      (reference "#PWR053") (unit 1) (value "VSS") (footprint "")
+    (path "/daad9d13-ecc0-4c91-9861-8f109eef8381"
+      (reference "#PWR0101") (unit 1) (value "GND") (footprint "")
     )
     (path "/c61db7ba-41b9-4169-bb6f-11722db31004"
       (reference "C1") (unit 1) (value "0u1") (footprint "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder")
