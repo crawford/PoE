@@ -5679,7 +5679,7 @@
     (property "Value" "RJ45_LED_Shielded" (id 1) (at 203.2 41.91 0)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "Footprint" "common:RJHSE-308X" (id 2) (at 191.77 13.97 0)
+    (property "Footprint" "common:RJHSE-338X" (id 2) (at 191.77 13.97 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "" (id 3) (at 215.9 27.94 0)
@@ -7365,7 +7365,7 @@
       (reference "J1") (unit 1) (value "ARM_SWD") (footprint "common:Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical")
     )
     (path "/6c8aa87e-5d26-482e-85f5-61333e7cd602"
-      (reference "J2") (unit 1) (value "RJ45_LED_Shielded") (footprint "common:RJHSE-308X")
+      (reference "J2") (unit 1) (value "RJ45_LED_Shielded") (footprint "common:RJHSE-338X")
     )
     (path "/23e451cf-9eb8-44b4-a66f-a7165d67d967"
       (reference "J3") (unit 1) (value "Screw_Terminal_01x02") (footprint "common:Phoenix_1935161")
