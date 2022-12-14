@@ -5326,7 +5326,7 @@
     (property "Value" "Q_PMOS_DGS" (id 1) (at 231.1401 134.62 0)
       (effects (font (size 1.27 1.27)) (justify left) hide)
     )
-    (property "Footprint" "Package_SO:PowerPAK_SO-8_Single" (id 2) (at 234.315 135.89 0)
+    (property "Footprint" "common:PowerPAK_SO-8_Single" (id 2) (at 234.315 135.89 0)
       (effects (font (size 1.27 1.27) italic) (justify left) hide)
     )
     (property "Datasheet" "~" (id 3) (at 232.41 140.97 0)
@@ -6938,7 +6938,7 @@
     (property "Value" "Q_PMOS_DGS" (id 1) (at 238.76 104.14 90)
       (effects (font (size 1.27 1.27)) hide)
     )
-    (property "Footprint" "Package_SO:PowerPAK_SO-8_Single" (id 2) (at 240.665 99.06 0)
+    (property "Footprint" "common:PowerPAK_SO-8_Single" (id 2) (at 240.665 99.06 0)
       (effects (font (size 1.27 1.27) italic) (justify left) hide)
     )
     (property "Datasheet" "~" (id 3) (at 238.76 93.98 0)
@@ -7650,10 +7650,10 @@
       (reference "L1") (unit 1) (value "15u") (footprint "Inductor_SMD:L_1210_3225Metric_Pad1.42x2.65mm_HandSolder")
     )
     (path "/3b171c12-23a9-40c9-8b4b-a2865c498c23"
-      (reference "Q1") (unit 1) (value "Q_PMOS_DGS") (footprint "Package_SO:PowerPAK_SO-8_Single")
+      (reference "Q1") (unit 1) (value "Q_PMOS_DGS") (footprint "common:PowerPAK_SO-8_Single")
     )
     (path "/d50e64c1-165e-4e88-931e-7e1d4303054e"
-      (reference "Q2") (unit 1) (value "Q_PMOS_DGS") (footprint "Package_SO:PowerPAK_SO-8_Single")
+      (reference "Q2") (unit 1) (value "Q_PMOS_DGS") (footprint "common:PowerPAK_SO-8_Single")
     )
     (path "/5ace4dd3-8bbf-416c-b527-4a320e0eb289"
       (reference "Q3") (unit 1) (value "Q_NPN_BEC") (footprint "Package_TO_SOT_SMD:SOT-23")
