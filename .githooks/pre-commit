@@ -21,7 +21,7 @@ EOF
     exit 1
 fi
 
-if git diff --cached $against 'hardware/*kicad_sch' | grep 'reference.*\?' > /dev/null 2>&1
+if git diff --cached $against 'hardware/*kicad_sch' | grep 'reference[^)]*?' > /dev/null 2>&1
 then
     cat <<\EOF
 Error: Attempt to add unannotated part
