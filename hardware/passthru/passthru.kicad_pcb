@@ -73,6 +73,8 @@
     )
   )
 
+  (property "REV" "A-dev")
+
   (net 0 "")
   (net 1 "VDDA")
   (net 2 "VSSA")
@@ -4894,7 +4896,7 @@
   (gr_text "Caution: +57 V DC" (at 134.239 80.01 270) (layer "B.SilkS") (tstamp f32fc5bb-532b-44dc-bb8a-e8f12720b05f)
     (effects (font (size 1 1) (thickness 0.2)) (justify mirror))
   )
-  (gr_text "PoE+\nGated Passthru\n${REV}" (at 170.815 112.395 90) (layer "F.SilkS") (tstamp 2569a538-40d7-44bc-9319-192b2d430d36)
+  (gr_text "PoE+\nGated Passthru\nRevision ${REV}" (at 170.815 112.395 90) (layer "F.SilkS") (tstamp 2569a538-40d7-44bc-9319-192b2d430d36)
     (effects (font (size 1.5 1.5) (thickness 0.3)) (justify left))
   )
 

@@ -502,5 +502,7 @@
       ""
     ]
   ],
-  "text_variables": {}
+  "text_variables": {
+    "REV": "A-dev"
+  }
 }
