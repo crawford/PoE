@@ -78,7 +78,7 @@
     )
   )
 
-  (property "REV" "A-dev")
+  (property "REV" "B-dev")
 
   (net 0 "")
   (net 1 "VDDA")
