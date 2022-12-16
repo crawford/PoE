@@ -6,6 +6,7 @@
 
   (title_block
     (title "Gated Passthrough")
+    (rev "${REV}")
   )
 
   (lib_symbols

@@ -5,6 +5,11 @@
   )
 
   (paper "A4")
+  (title_block
+    (title "Gated Passthrough")
+    (rev "${REV}")
+  )
+
   (layers
     (0 "F.Cu" signal)
     (31 "B.Cu" signal)
@@ -1161,7 +1166,7 @@
     (tags "SMT resistor net Bourns CAT16 series 4 way")
     (property "Sheetfile" "passthru.kicad_sch")
     (property "Sheetname" "")
-    (path "/e358a910-2228-46a1-9c1a-bd70ac4676c5")
+    (path "/e1d09bfe-e5d6-4852-bd2b-e960572f1cbe")
     (attr smd)
     (fp_text reference "RN1" (at 0 -2.6) (layer "F.SilkS")
       (effects (font (size 1 1) (thickness 0.15)))
