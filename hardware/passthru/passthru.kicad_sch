@@ -5168,7 +5168,7 @@
     (in_bom yes) (on_board yes) (fields_autoplaced)
     (uuid 2fbf6397-d758-4da9-b1f6-76896aa5eb14)
     (property "Reference" "R18" (id 0) (at 241.3 104.14 90))
-    (property "Value" "10m" (id 1) (at 241.3 106.68 90))
+    (property "Value" "0R1" (id 1) (at 241.3 106.68 90))
     (property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder" (id 2) (at 241.554 109.474 90)
       (effects (font (size 1.27 1.27)) hide)
     )
@@ -7713,7 +7713,7 @@
       (reference "R17") (unit 1) (value "10m") (footprint "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder")
     )
     (path "/2fbf6397-d758-4da9-b1f6-76896aa5eb14"
-      (reference "R18") (unit 1) (value "10m") (footprint "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder")
+      (reference "R18") (unit 1) (value "0R1") (footprint "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder")
     )
     (path "/49b4fa8c-c9be-4919-acc5-cb23c2bb3e6c"
       (reference "R19") (unit 1) (value "66k5") (footprint "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder")
