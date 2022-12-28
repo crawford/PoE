@@ -6,14 +6,14 @@ with import <nixpkgs> {
 };
 
 let
-  rust = (rustChannels.stable.rust.override {
+  rust = (rustChannelOf { channel = "1.66.0"; }).rust.override {
     targets = [ "thumbv7m-none-eabi" ];
     extensions = [
       "clippy-preview"
       "rustfmt-preview"
       "rust-std"
     ];
-  });
+  };
 in
 mkShell {
   buildInputs = [
