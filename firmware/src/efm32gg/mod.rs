@@ -24,8 +24,8 @@ use dma::{
     TxBufferDescriptor,
 };
 use efm32gg11b820::{self, Interrupt, ETH, NVIC};
-use efm32gg_hal::gpio::{pins, Input, Output};
-use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
+use embedded_hal::blocking::delay::DelayMs;
+use embedded_hal::digital::v2::{InputPin, OutputPin};
 use ignore_result::Ignore;
 use smoltcp::wire::EthernetAddress;
 use smoltcp::{self, phy, time, Error};
@@ -79,25 +79,25 @@ struct Mac<'a> {
     eth: ETH,
 }
 
-pub struct Pins {
-    pub rmii_rxd0: pins::PD9<Input>,
-    pub rmii_refclk: pins::PD10<Output>,
-    pub rmii_crsdv: pins::PD11<Input>,
-    pub rmii_rxer: pins::PD12<Input>,
-    pub rmii_mdio: pins::PD13<Output>,
-    pub rmii_mdc: pins::PD14<Output>,
-    pub rmii_txd0: pins::PF6<Output>,
-    pub rmii_txd1: pins::PF7<Output>,
-    pub rmii_txen: pins::PF8<Output>,
-    pub rmii_rxd1: pins::PF9<Input>,
-    pub phy_reset: pins::PH7<Output>,
+pub struct Pins<'a> {
+    pub rmii_rxd0: &'a mut dyn InputPin<Error = ()>,
+    pub rmii_refclk: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_crsdv: &'a mut dyn InputPin<Error = ()>,
+    pub rmii_rxer: &'a mut dyn InputPin<Error = ()>,
+    pub rmii_mdio: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_mdc: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_txd0: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_txd1: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_txen: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_rxd1: &'a mut dyn InputPin<Error = ()>,
+    pub phy_reset: &'a mut dyn OutputPin<Error = ()>,
 }
 
 impl Mdio {
     /// Initialize the MDIO
     ///
     /// Note: This assumes the PHY will be interfaced via RMII, with the EFM providing the clock.
-    fn new(eth: ETH, delay: &mut dyn DelayMs<u8>, mut pins: Pins) -> Mdio {
+    fn new(eth: ETH, delay: &mut dyn DelayMs<u8>, pins: Pins) -> Mdio {
         let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
 
         // Enable the HFPER clock and source CLKOUT2 from HFXO
