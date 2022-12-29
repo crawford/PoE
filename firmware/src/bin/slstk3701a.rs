@@ -16,11 +16,7 @@
 #![no_main]
 #![no_std]
 
-mod efm32gg;
-mod ksz8091;
-mod mac;
-mod network;
-mod phy;
+/// Sandbox for development on the SLSTK3701A dev board
 
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
@@ -38,9 +34,9 @@ type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH
     peripherals = true,
 )]
 mod app {
-    use crate::efm32gg::{self, dma};
-    use crate::ksz8091::KSZ8091;
-    use crate::network;
+    use poe::efm32gg::{self, dma};
+    use poe::ksz8091::KSZ8091;
+    use poe::network;
 
     use core::pin::Pin;
     use cortex_m::{delay::Delay, interrupt};
