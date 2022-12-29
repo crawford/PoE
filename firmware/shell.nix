@@ -11,6 +11,8 @@ let
     extensions = [
       "clippy-preview"
       "rustfmt-preview"
+      "rust-analyzer-preview"
+      "rust-src"
       "rust-std"
     ];
   };
