@@ -317,22 +317,12 @@ mod app {
         log::trace!("Handled sockets: {}", timestamp);
     }
 
-    #[task(binds = ETH, shared = [network, led0, led1])]
-    fn eth_irq(cx: eth_irq::Context) {
-        let eth_irq::SharedResources {
-            mut network,
-            mut led0,
-            mut led1,
-        } = cx.shared;
-
+    #[task(binds = ETH, shared = [network])]
+    fn eth_irq(mut cx: eth_irq::Context) {
         interrupt::free(|_| {
-            network.lock(|network| {
-                led0.lock(|led0| {
-                    led1.lock(|led1| {
-                        network.interface.device_mut().mac_irq(led0, led1);
-                    })
-                })
-            })
+            cx.shared.network.lock(|network| {
+                network.interface.device_mut().mac_irq();
+            });
         });
 
         handle_network::spawn().ignore();
