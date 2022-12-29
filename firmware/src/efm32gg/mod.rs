@@ -91,7 +91,6 @@ pub struct Pins {
     pub rmii_txen: pins::PF8<Output>,
     pub rmii_rxd1: pins::PF9<Input>,
     pub phy_reset: pins::PH7<Output>,
-    pub phy_enable: pins::PI10<Output>,
 }
 
 impl Mdio {
@@ -123,9 +122,6 @@ impl Mdio {
 
         // Hold the PHY module in reset
         pins.phy_reset.set_low().ignore();
-
-        // Power up the PHY module
-        pins.phy_enable.set_high().ignore();
 
         // Enable the PHY's reference clock
         cmu.routeloc0.modify(|_, reg| reg.clkout2loc().loc5());

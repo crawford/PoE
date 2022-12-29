@@ -42,6 +42,7 @@ mod app {
     use cortex_m::{delay::Delay, interrupt};
     use efm32gg_hal::cmu::CMUExt;
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
+    use embedded_hal::digital::v2::OutputPin;
     use ignore_result::Ignore;
     use led::rgb::{self, Color};
     use led::LED;
@@ -209,6 +210,9 @@ mod app {
             log::info!("Logger online!");
         };
 
+        // Power up the PHY module
+        gpio.pi10.as_output().set_high().ignore();
+
         let mut delay = Delay::new(cx.core.SYST, 50_000_000);
         let (mac_phy, mac_addr) = efm32gg::EFM32GG::new(
             dma::RxBuffer::new(
@@ -233,7 +237,6 @@ mod app {
                 rmii_txen: gpio.pf8.as_output(),
                 rmii_rxd1: gpio.pf9.as_input(),
                 phy_reset: gpio.ph7.as_output(),
-                phy_enable: gpio.pi10.as_output(),
             },
             KSZ8091::new,
         )
