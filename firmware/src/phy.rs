@@ -51,6 +51,7 @@ impl fmt::Display for Oui {
     }
 }
 
+#[derive(Debug)]
 pub enum Register {
     BasicControl,
     BasicStatus,

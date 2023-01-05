@@ -17,7 +17,6 @@
 #![no_std]
 
 /// Sandbox for development on the SLSTK3701A dev board
-
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
@@ -149,7 +148,7 @@ mod app {
         gpio_clk.enable();
 
         // TODO: Move into efm32gg-hal.
-        // Configure PG15 as an input with pull-up, and enable interrupts on the falling edge. This is connected
+        // Configure PG15 as an input and enable interrupts on the falling edge. This is connected
         // to INTRP on the PHY.
         cx.device.GPIO.pg_modeh.modify(|_, w| w.mode15().input());
         cx.device

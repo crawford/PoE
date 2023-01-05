@@ -48,12 +48,12 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
     where
         F: FnOnce(u8, &mut dyn mac::Mdio) -> P,
     {
-        let mut mdio = Mdio::new(eth, delay, pins);
-        let phy_addr = probe_phy_addr(&mdio).ok_or("Failed to find PHY")?;
-        let phy = new_phy(phy_addr, &mut mdio);
-        let oui = phy.oui(&mdio);
+        let mut rmii = Rmii::new(eth, delay, pins);
+        let phy_addr = probe_phy_addr(&rmii).ok_or("Failed to find PHY")?;
+        let phy = new_phy(phy_addr, &mut rmii);
+        let oui = phy.oui(&rmii);
         let mac_addr = EthernetAddress([oui.0[0], oui.0[1], oui.0[2], 0x00, 0x00, 0x01]);
-        let mac = Mac::new(mdio, mac_addr, rx_buffer, tx_buffer);
+        let mac = Mac::new(rmii, mac_addr, rx_buffer, tx_buffer);
 
         log::debug!("MAC/PHY initialized ({}/{})", mac_addr, phy_addr);
 
@@ -69,35 +69,34 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
     }
 }
 
-struct Mdio {
-    eth: ETH,
-}
-
-struct Mac<'a> {
-    rx_buffer: RxBuffer<'a>,
-    tx_buffer: TxBuffer<'a>,
-    eth: ETH,
-}
-
 pub struct Pins<'a> {
-    pub rmii_rxd0: &'a mut dyn InputPin<Error = ()>,
     pub rmii_refclk: &'a mut dyn OutputPin<Error = ()>,
+    pub phy_reset: &'a mut dyn OutputPin<Error = ()>,
+
     pub rmii_crsdv: &'a mut dyn InputPin<Error = ()>,
+    pub rmii_rxd0: &'a mut dyn InputPin<Error = ()>,
+    pub rmii_rxd1: &'a mut dyn InputPin<Error = ()>,
     pub rmii_rxer: &'a mut dyn InputPin<Error = ()>,
-    pub rmii_mdio: &'a mut dyn OutputPin<Error = ()>,
-    pub rmii_mdc: &'a mut dyn OutputPin<Error = ()>,
     pub rmii_txd0: &'a mut dyn OutputPin<Error = ()>,
     pub rmii_txd1: &'a mut dyn OutputPin<Error = ()>,
+
+    pub rmii_mdc: &'a mut dyn OutputPin<Error = ()>,
+    pub rmii_mdio: &'a mut dyn OutputPin<Error = ()>,
     pub rmii_txen: &'a mut dyn OutputPin<Error = ()>,
-    pub rmii_rxd1: &'a mut dyn InputPin<Error = ()>,
-    pub phy_reset: &'a mut dyn OutputPin<Error = ()>,
 }
 
-impl Mdio {
-    /// Initialize the MDIO
+struct Rmii {
+    eth: ETH,
+}
+
+impl Rmii {
+    /// Initialize the RMII
     ///
-    /// Note: This assumes the PHY will be interfaced via RMII, with the EFM providing the clock.
-    fn new(eth: ETH, delay: &mut dyn DelayMs<u8>, pins: Pins) -> Mdio {
+    /// Note: This assumes the following:
+    ///       - PHY will be interfaced via RMII
+    ///       - EFM provides the clock
+    ///       - HFXO is 50 MHz
+    fn new(eth: ETH, delay: &mut dyn DelayMs<u8>, pins: Pins) -> Rmii {
         let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
 
         // Enable the HFPER clock and source CLKOUT2 from HFXO
@@ -148,19 +147,42 @@ impl Mdio {
         // Release the PHY reset
         pins.phy_reset.set_high().ignore();
 
-        Mdio { eth }
+        Rmii { eth }
     }
 }
 
+impl mac::Mdio for Rmii {
+    fn read(&self, address: u8, register: Register) -> u16 {
+        log::trace!("MDIO.read(0x{:02X}, {:?})", address, register);
+        mdio_read(&self.eth, address, register)
+    }
+
+    fn write(&mut self, address: u8, register: Register, data: u16) {
+        log::trace!(
+            "MDIO.write(0x{:02X}, {:?}, 0x{:04X})",
+            address,
+            register,
+            data
+        );
+        mdio_write(&mut self.eth, address, register, data)
+    }
+}
+
+struct Mac<'a> {
+    rx_buffer: RxBuffer<'a>,
+    tx_buffer: TxBuffer<'a>,
+    eth: ETH,
+}
+
 impl<'a> Mac<'a> {
-    /// Fully initializes the MAC, starting from the initialized MDIO
+    /// Fully initializes the MAC, starting from the initialized RMII
     fn new(
-        mdio: Mdio,
+        rmii: Rmii,
         addr: EthernetAddress,
         rx_buffer: RxBuffer<'a>,
         tx_buffer: TxBuffer<'a>,
     ) -> Mac<'a> {
-        let eth = mdio.eth;
+        let eth = rmii.eth;
 
         // Set the RX buffer size to 128 bytes
         eth.dmacfg.write(|reg| {
@@ -448,16 +470,6 @@ impl<'a> Mac<'a> {
         //     led0.set(Color::Cyan);
         //     led1.set(Color::Cyan);
         // }
-    }
-}
-
-impl mac::Mdio for Mdio {
-    fn read(&self, address: u8, register: Register) -> u16 {
-        mdio_read(&self.eth, address, register)
-    }
-
-    fn write(&mut self, address: u8, register: Register, data: u16) {
-        mdio_write(&mut self.eth, address, register, data)
     }
 }
 
