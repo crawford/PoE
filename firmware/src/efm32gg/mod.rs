@@ -48,10 +48,20 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
     where
         F: FnOnce(u8, &mut dyn mac::Mdio) -> P,
     {
+        use mac::Mdio;
+
         let mut rmii = Rmii::new(eth, delay, pins);
         let phy_addr = probe_phy_addr(&rmii).ok_or("Failed to find PHY")?;
         let phy = new_phy(phy_addr, &mut rmii);
         let oui = phy.oui(&rmii);
+
+        // Set the advertisement as follows:
+        // - IEEE 802.3
+        // - 10BASE-T (Half-Duplex)
+        // - No Pause
+        // - No next page capability (recommended by data sheet)
+        rmii.write(phy_addr, Register::AutoAdvertisement, 0b000000_00001_00001);
+
         let mac_addr = EthernetAddress([oui.0[0], oui.0[1], oui.0[2], 0x00, 0x00, 0x01]);
         let mac = Mac::new(rmii, mac_addr, rx_buffer, tx_buffer);
 
@@ -115,7 +125,8 @@ impl Rmii {
             reg.mdcclkdiv().divby16();
             reg.rx1536byteframes().set_bit();
             reg.rxchksumoffloaden().set_bit();
-            reg.speed().set_bit();
+            reg.speed().clear_bit();
+            reg.fullduplex().clear_bit();
             reg
         });
 
