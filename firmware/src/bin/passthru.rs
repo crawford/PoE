@@ -17,6 +17,10 @@
 #![no_std]
 
 /// Firmware for the PoE+ gated passthrough
+///
+/// This firmware implements the following:
+/// - identify - Send a "0" or a "1" over TCP to the control port to disable or enable,
+///              respectively, the flashing "Identify" LED.
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
@@ -45,9 +49,11 @@ mod app {
         Interface, InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketHandle,
         SocketStorage,
     };
-    use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket};
+    use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::Instant;
     use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
+
+    const CONTROL_PORT: u16 = 51900;
 
     #[monotonic(binds = SysTick, default = true)]
     type Monotonic = dwt_systick_monotonic::DwtSystick<25_000_000>; // 25 MHz
@@ -65,6 +71,7 @@ mod app {
 
     #[shared]
     struct SharedResources {
+        id: IdLed,
         network: NetworkResources,
         rtc: efm32gg11b820::RTC,
     }
@@ -78,9 +85,15 @@ mod app {
         dhcp_handle: SocketHandle,
         interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
         led: crate::NetworkLed,
+        tcp_handle: SocketHandle,
     }
 
     impl NetworkResources {
+        fn handle_sockets(&mut self, id: &mut IdLed) {
+            self.handle_dhcp();
+            self.handle_tcp(id);
+        }
+
         fn handle_dhcp(&mut self) {
             let iface = &mut self.interface;
             match iface.get_socket::<Dhcpv4Socket>(self.dhcp_handle).poll() {
@@ -117,6 +130,49 @@ mod app {
                 }
             }
         }
+
+        fn handle_tcp(&mut self, id: &mut IdLed) {
+            let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
+            if !socket.is_open() {
+                socket.listen(CONTROL_PORT).unwrap();
+            }
+
+            if socket.may_recv() {
+                socket
+                    .recv(|b| {
+                        let len = b.len();
+                        match b.iter().next() {
+                            Some(b'0') => id.stop(),
+                            Some(b'1') => id.start(),
+                            _ => {}
+                        }
+                        (len, ())
+                    })
+                    .unwrap();
+
+                socket.close();
+            }
+        }
+    }
+
+    pub struct IdLed {
+        led: crate::IdentifyLed,
+        state: State,
+        spawn: Option<blink_id_led::SpawnHandle>,
+    }
+
+    impl IdLed {
+        fn start(&mut self) {
+            blink_id_led::spawn().expect("spawning blink_id_led");
+        }
+
+        fn stop(&mut self) {
+            if let Some(handle) = self.spawn.take() {
+                handle.cancel().expect("cancelling blink_id_led");
+            }
+            self.led.set(State::Off);
+            self.state = State::Off;
+        }
     }
 
     #[init(
@@ -125,9 +181,11 @@ mod app {
              eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
              eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
              eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
+             tcp_rx_payload: [u8; 128] = [0; 128],
+             tcp_tx_payload: [u8; 128] = [0; 128],
 
              neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 1] = [SocketStorage::EMPTY; 1],
+             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
              ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 4] = [None; 4],
@@ -321,14 +379,25 @@ mod app {
             .random_seed(seed)
             .finalize();
 
+        let tcp_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
+        ));
+
         let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
 
         let syst = delay.free();
         (
             SharedResources {
+                id: IdLed {
+                    led: led_id,
+                    state: State::Off,
+                    spawn: None,
+                },
                 network: NetworkResources {
                     interface,
                     dhcp_handle,
+                    tcp_handle,
                     led: led_net,
                 },
                 rtc,
@@ -343,19 +412,20 @@ mod app {
         )
     }
 
-    #[task(capacity = 2, local = [spawn], shared = [network, rtc])]
+    #[task(capacity = 2, local = [spawn], shared = [id, network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
         let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
         let spawn = cx.local.spawn;
+        let mut id = cx.shared.id;
         let mut network = cx.shared.network;
 
         match network.lock(|network| network.interface.poll(timestamp)) {
             Ok(true) => {
                 log::trace!("Handling sockets...");
 
-                network.lock(|network| network.handle_dhcp());
+                id.lock(|id| network.lock(|network| network.handle_sockets(id)));
             }
             Ok(false) => log::trace!("Nothing to do"),
             Err(err) => log::error!("Failed to poll network interface: {}", err),
@@ -373,6 +443,21 @@ mod app {
         }
 
         log::trace!("Handled sockets: {}", timestamp);
+    }
+
+    #[task(shared = [id])]
+    fn blink_id_led(mut cx: blink_id_led::Context) {
+        use dwt_systick_monotonic::fugit::ExtU32;
+        use State::*;
+
+        cx.shared.id.lock(|id| {
+            id.state = match id.state {
+                On => Off,
+                Off => On,
+            };
+            id.led.set(id.state);
+            id.spawn = Some(schedule!(blink_id_led, 250u32.millis()));
+        });
     }
 
     #[task(binds = ETH, shared = [network])]
