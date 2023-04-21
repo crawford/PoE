@@ -20,12 +20,12 @@
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
+use ignore_result::Ignore;
 use led::rgb::{self, Color};
-use led::LED;
 use smoltcp::time::Instant;
 
-type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>>;
-type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>>;
+type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>, ()>;
+type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>, ()>;
 
 #[rtic::app(
     dispatchers = [ CAN0, CAN1 ],
@@ -44,7 +44,6 @@ mod app {
     use embedded_hal::digital::v2::OutputPin;
     use ignore_result::Ignore;
     use led::rgb::{self, Color};
-    use led::LED;
     use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
     use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::{Duration, Instant};
@@ -188,8 +187,8 @@ mod app {
             gpio.ph15.as_opendrain(),
         );
 
-        led0.set(Color::Black);
-        led1.set(Color::Black);
+        led0.set(Color::Black).ignore();
+        led1.set(Color::Black).ignore();
 
         #[cfg(feature = "logging")]
         {
@@ -350,8 +349,8 @@ fn DefaultHandler(irqn: i16) {
 
     log::error!("Default Handler: irq {}", irqn);
     let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(Color::Red);
-    led1.set(Color::Red);
+    led0.set(Color::Red).ignore();
+    led1.set(Color::Red).ignore();
 
     if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
@@ -368,8 +367,8 @@ fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     interrupt::disable();
 
     let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(Color::Red);
-    led1.set(Color::Red);
+    led0.set(Color::Red).ignore();
+    led1.set(Color::Red).ignore();
 
     if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
