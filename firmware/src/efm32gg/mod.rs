@@ -95,14 +95,14 @@ impl Rmii {
     /// Note: This assumes the following:
     ///       - PHY will be interfaced via RMII
     ///       - EFM provides the clock
-    ///       - HFXO is 50 MHz
+    ///       - HFXO is 25 MHz
     fn new(eth: ETH, delay: &mut dyn DelayMs<u8>, pins: Pins) -> Rmii {
         let cmu = unsafe { &*efm32gg11b820::CMU::ptr() };
 
-        // Enable the HFPER clock and source CLKOUT2 from HFXO
+        // Enable the HFPER clock and source CLKOUT2 from the frequency-doubled HFXO
         cmu.ctrl.modify(|_, reg| {
             reg.hfperclken().set_bit();
-            reg.clkoutsel2().hfxo();
+            reg.clkoutsel2().hfxox2q();
             reg
         });
 
@@ -112,7 +112,7 @@ impl Rmii {
         // Scale the MDC down to 1.5625MHz (below the 2.5MHz limit)
         // Enable 1536-byte frames, which are needed to support 802.11Q VLAN tagging
         eth.networkcfg.write(|reg| {
-            reg.mdcclkdiv().divby32();
+            reg.mdcclkdiv().divby16();
             reg.rx1536byteframes().set_bit();
             reg.rxchksumoffloaden().set_bit();
             reg.speed().set_bit();
@@ -122,14 +122,14 @@ impl Rmii {
         // Hold the PHY module in reset
         pins.phy_reset.set_low().ignore();
 
-        // Enable the PHY's reference clock
-        cmu.routeloc0.modify(|_, reg| reg.clkout2loc().loc5());
+        // Enable the PHY's reference clock on PA3 (CMU_CLK2 #1)
+        cmu.routeloc0.modify(|_, reg| reg.clkout2loc().loc1());
         cmu.routepen.modify(|_, reg| reg.clkout2pen().set_bit());
 
-        // Enable the RMII and MDIO
+        // Enable the MDC on PB4 (ETH_MDC #0) and MDIO on PB3 (ETH_MDIO #0)
         eth.routeloc1.write(|reg| {
-            reg.rmiiloc().loc1();
-            reg.mdioloc().loc1();
+            reg.rmiiloc().loc0();
+            reg.mdioloc().loc0();
             reg
         });
         eth.routepen.write(|reg| {
