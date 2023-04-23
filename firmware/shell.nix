@@ -21,6 +21,7 @@ mkShell {
   buildInputs = [
     cargo-binutils
     fio
+    openocd
     rust
     sccache
   ];
