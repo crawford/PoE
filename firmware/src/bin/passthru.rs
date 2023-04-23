@@ -378,12 +378,16 @@ mod app {
             .random_seed(seed)
             .finalize();
 
+        let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
+        let http_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.http_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.http_tx_payload.as_mut()),
+        ));
         let tcp_handle = interface.add_socket(TcpSocket::new(
             TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
 
-        let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
         led_network.show(network::State::NoLink);
 
         #[cfg(feature = "rtt")]
@@ -397,7 +401,9 @@ mod app {
                 network: network::Resources {
                     interface,
                     dhcp_handle,
+                    http_handle,
                     tcp_handle,
+                    id_active: false,
                 },
                 rtc,
             },
