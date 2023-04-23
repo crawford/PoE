@@ -18,6 +18,10 @@ led = "0.3.1"
 log = "0.4.8"
 smoltcp = { version = "0.8.0", default-features = false, features = [ "socket-dhcpv4", "socket-tcp" ] }
 
+[build-dependencies]
+chrono = { version = "0.4.19", features = [ "clock" ] }
+deflate = { version = "1.0.0", features = [ "gzip" ] }
+
 [profile.dev]
 opt-level = "s"
 

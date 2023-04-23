@@ -21,11 +21,15 @@ use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 
 const CONTROL_PORT: u16 = 51900;
+const HTTP_PORT: u16 = 80;
 
 pub struct Resources {
     pub interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
     pub dhcp_handle: SocketHandle,
+    pub http_handle: SocketHandle,
     pub tcp_handle: SocketHandle,
+
+    pub id_active: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -37,14 +41,21 @@ pub enum State {
     Operational,
 }
 
+enum Request {
+    GetIndex,
+    ToggleIdentify,
+    Unknown,
+}
+
 impl Resources {
-    pub fn handle_sockets<D, I>(&mut self, dhcp: D, identify: I)
+    pub fn handle_sockets<D, I>(&mut self, dhcp: D, mut identify: I)
     where
         D: FnOnce(State),
-        I: FnOnce(bool),
+        I: FnMut(bool),
     {
         self.handle_dhcp(dhcp);
-        self.handle_tcp(identify);
+        self.handle_http(&mut identify);
+        self.handle_tcp(&mut identify);
     }
 
     pub fn reset_dhcp(&mut self) {
@@ -110,6 +121,53 @@ impl Resources {
                 })
                 .unwrap();
 
+            socket.close();
+        }
+    }
+
+    fn handle_http<F: FnMut(bool)>(&mut self, mut enable_led: F) {
+        use Request::*;
+
+        fn parse(data: &[u8]) -> (usize, Request) {
+            if data.starts_with(b"GET /") {
+                (data.len(), GetIndex)
+            } else if data.starts_with(b"POST /identify") {
+                (data.len(), ToggleIdentify)
+            } else {
+                (data.len(), Unknown)
+            }
+        }
+
+        let socket = self.interface.get_socket::<TcpSocket>(self.http_handle);
+
+        if !socket.is_open() {
+            socket.listen(HTTP_PORT).unwrap();
+        }
+
+        macro_rules! reply {
+            ($name:literal) => {{
+                let resp = include_bytes!(concat!(env!("OUT_DIR"), "/", $name));
+                socket
+                    .send(|b| {
+                        b[0..resp.len()].copy_from_slice(resp);
+
+                        (resp.len(), ())
+                    })
+                    .expect(concat!("sending ", $name));
+            }};
+        }
+
+        if socket.can_recv() && socket.can_send() {
+            match socket.recv(|b| parse(b)).expect("receiving from http") {
+                GetIndex => reply!("index.http"),
+                Unknown => reply!("not-found.http"),
+                ToggleIdentify => {
+                    self.id_active = !self.id_active;
+                    enable_led(self.id_active);
+                    reply!("identify.http");
+                }
+            }
+            // XXX: This doesn't actually reset the connection for some reason.
             socket.close();
         }
     }

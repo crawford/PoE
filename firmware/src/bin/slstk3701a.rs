@@ -72,16 +72,18 @@ mod app {
 
     #[init(
         local = [
-             eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
-             eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
-             eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
-             eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
-             tcp_rx_payload: [u8; 1024] = [0; 1024],
-             tcp_tx_payload: [u8; 1024] = [0; 1024],
+            eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
+            eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
+            eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
+            eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
+            http_rx_payload: [u8; 512] = [0; 512],
+            http_tx_payload: [u8; 1024] = [0; 1024],
+            tcp_rx_payload: [u8; 1024] = [0; 1024],
+            tcp_tx_payload: [u8; 1024] = [0; 1024],
 
-             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
-             ip_addresses: [IpCidr; 1] =
+            neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
+            sockets: [SocketStorage<'static>; 3] = [SocketStorage::EMPTY; 3],
+            ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 1] = [None; 1],
         ]
@@ -248,6 +250,11 @@ mod app {
             .random_seed(seed)
             .finalize();
 
+        let http_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.http_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.http_tx_payload.as_mut()),
+        ));
+
         let tcp_handle = interface.add_socket(TcpSocket::new(
             TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
@@ -265,8 +272,10 @@ mod app {
                 led1,
                 network: network::Resources {
                     interface,
-                    tcp_handle,
                     dhcp_handle,
+                    http_handle,
+                    tcp_handle,
+                    id_active: false,
                 },
                 rtc: cx.device.RTC,
             },

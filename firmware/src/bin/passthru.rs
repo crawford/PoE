@@ -198,9 +198,11 @@ mod app {
              eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
              tcp_rx_payload: [u8; 128] = [0; 128],
              tcp_tx_payload: [u8; 128] = [0; 128],
+             http_rx_payload: [u8; 128] = [0; 128],
+             http_tx_payload: [u8; 1024] = [0; 1024],
 
              neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
+             sockets: [SocketStorage<'static>; 3] = [SocketStorage::EMPTY; 3],
              ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 4] = [None; 4],
@@ -393,12 +395,16 @@ mod app {
             .random_seed(seed)
             .finalize();
 
+        let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
+        let http_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.http_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.http_tx_payload.as_mut()),
+        ));
         let tcp_handle = interface.add_socket(TcpSocket::new(
             TcpSocketBuffer::new(cx.local.tcp_rx_payload.as_mut()),
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
 
-        let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
         led_network.show(network::State::NoLink);
 
         let syst = delay.free();
@@ -409,7 +415,9 @@ mod app {
                 network: network::Resources {
                     interface,
                     dhcp_handle,
+                    http_handle,
                     tcp_handle,
+                    id_active: false,
                 },
                 rtc,
             },
