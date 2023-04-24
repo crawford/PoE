@@ -467,19 +467,22 @@ mod app {
         // TODO: This probably should be deferred since it's reading from the PHY
         let mut led = cx.shared.led_network;
         cx.shared.network.lock(|network| {
-            let device = network.interface.device_mut();
-            device.phy_irq();
+            led.lock(|led| {
+                let device = network.interface.device_mut();
+                device.phy_irq();
 
-            led.lock(|led| match (device.link_state().is_some(), led.network) {
-                (true, NoLink) => {
-                    log::debug!("Link acquired");
-                    led.show(NoDhcp);
+                match (device.link_state().is_some(), led.network) {
+                    (true, NoLink) => {
+                        log::debug!("Link acquired");
+                        led.show(NoDhcp);
+                        network.reset_dhcp();
+                    }
+                    (false, _) => {
+                        log::debug!("Link lost");
+                        led.show(NoLink);
+                    }
+                    _ => {}
                 }
-                (false, _) => {
-                    log::debug!("Link lost");
-                    led.show(NoLink);
-                }
-                _ => {}
             });
         });
         // TODO: Why is the one-second delay necessary? 100 ms doesn't work.
