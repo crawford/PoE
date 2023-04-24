@@ -47,6 +47,12 @@ impl Resources {
         self.handle_tcp(identify);
     }
 
+    pub fn reset_dhcp(&mut self) {
+        self.interface
+            .get_socket::<Dhcpv4Socket>(self.dhcp_handle)
+            .reset();
+    }
+
     fn handle_dhcp<F: FnOnce(State)>(&mut self, dhcp: F) {
         let iface = &mut self.interface;
         match iface.get_socket::<Dhcpv4Socket>(self.dhcp_handle).poll() {
@@ -80,6 +86,7 @@ impl Resources {
                     addrs[0] = IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))
                 });
                 iface.routes_mut().remove_default_ipv4_route();
+                self.reset_dhcp();
             }
         }
     }
