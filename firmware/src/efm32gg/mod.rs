@@ -16,7 +16,7 @@
 pub mod dma;
 
 use crate::mac;
-use crate::phy::{probe_addr as probe_phy_addr, Phy, Register};
+use crate::phy::{probe_addr as probe_phy_addr, LinkState, Phy, Register};
 use core::cmp;
 use core::convert::TryInto;
 use dma::{
@@ -76,6 +76,10 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
 
     pub fn phy_irq(&mut self) {
         self.phy.irq(&mut self.mac);
+    }
+
+    pub fn link_state(&self) -> Option<LinkState> {
+        self.phy.link_state(&self.mac)
     }
 }
 
