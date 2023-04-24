@@ -67,7 +67,7 @@ mod app {
 
     #[shared]
     struct SharedResources {
-        id: IdLed,
+        led_identify: IdentifyLed,
         network: network::Resources,
         network_led: crate::NetworkLed,
         rtc: efm32gg11b820::RTC,
@@ -78,24 +78,50 @@ mod app {
         spawn: Option<handle_network::SpawnHandle>,
     }
 
-    pub struct IdLed {
+    pub struct IdentifyLed {
         led: crate::IdentifyLed,
         state: State,
-        spawn: Option<blink_id_led::SpawnHandle>,
+        spawn: Option<flash_identify_led::SpawnHandle>,
     }
 
-    impl IdLed {
-        fn start(&mut self) {
-            blink_id_led::spawn().expect("spawning blink_id_led");
+    impl IdentifyLed {
+        fn new(led: crate::IdentifyLed) -> IdentifyLed {
+            IdentifyLed {
+                spawn: None,
+                led,
+                state: State::Off,
+            }
         }
 
-        fn stop(&mut self) {
-            if let Some(handle) = self.spawn.take() {
-                handle.cancel().expect("cancelling blink_id_led");
+        fn enable(&mut self, en: bool) {
+            match en {
+                true => flash_identify_led::spawn().expect("spawning flash_identify_led"),
+                false => {
+                    if let Some(handle) = self.spawn.take() {
+                        handle.cancel().expect("cancelling flash_identify_led");
+                    }
+                    self.led.set(State::Off);
+                    self.state = State::Off;
+                }
             }
             self.led.set(State::Off);
             self.state = State::Off;
         }
+    }
+
+    #[task(shared = [led_identify])]
+    fn flash_identify_led(mut cx: flash_identify_led::Context) {
+        use dwt_systick_monotonic::fugit::ExtU32;
+        use State::*;
+
+        cx.shared.led_identify.lock(|id| {
+            id.state = match id.state {
+                On => Off,
+                Off => On,
+            };
+            id.led.set(id.state);
+            id.spawn = Some(schedule!(flash_identify_led, 250u32.millis()));
+        });
     }
 
     #[init(
@@ -259,10 +285,10 @@ mod app {
         let gpio = gpio.split(gpio_clk);
         let _swo = gpio.pf2.as_output();
 
-        let mut led_id = CommonAnodeLED::new(gpio.pe4.as_opendrain());
+        let mut led_identify = IdentifyLed::new(CommonAnodeLED::new(gpio.pe4.as_opendrain()));
         let mut led_net = CommonAnodeLED::new(gpio.pe5.as_opendrain());
 
-        led_id.set(State::Off);
+        led_identify.enable(false);
         led_net.set(State::On);
 
         let mut delay = Delay::new(cx.core.SYST, 19_000_000);
@@ -312,11 +338,7 @@ mod app {
         let syst = delay.free();
         (
             SharedResources {
-                id: IdLed {
-                    led: led_id,
-                    state: State::Off,
-                    spawn: None,
-                },
+                led_identify,
                 network: network::Resources {
                     interface,
                     dhcp_handle,
@@ -335,13 +357,13 @@ mod app {
         )
     }
 
-    #[task(capacity = 2, local = [spawn], shared = [id, network, network_led, rtc])]
+    #[task(capacity = 2, local = [spawn], shared = [led_identify, network, network_led, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
         let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
         let spawn = cx.local.spawn;
-        let mut id = cx.shared.id;
+        let mut led_id = cx.shared.led_identify;
         let mut network = cx.shared.network;
         let mut led = cx.shared.network_led;
 
@@ -355,10 +377,7 @@ mod app {
                             false => led.lock(|led| led.set(State::On)),
                             true => led.lock(|led| led.set(State::Off)),
                         },
-                        |en| match en {
-                            false => id.lock(|led| led.stop()),
-                            true => id.lock(|led| led.start()),
-                        },
+                        |en| led_id.lock(|led| led.enable(en)),
                     )
                 });
             }
@@ -378,21 +397,6 @@ mod app {
         }
 
         log::trace!("Handled sockets: {}", timestamp);
-    }
-
-    #[task(shared = [id])]
-    fn blink_id_led(mut cx: blink_id_led::Context) {
-        use dwt_systick_monotonic::fugit::ExtU32;
-        use State::*;
-
-        cx.shared.id.lock(|id| {
-            id.state = match id.state {
-                On => Off,
-                Off => On,
-            };
-            id.led.set(id.state);
-            id.spawn = Some(schedule!(blink_id_led, 250u32.millis()));
-        });
     }
 
     #[task(binds = ETH, shared = [network])]
