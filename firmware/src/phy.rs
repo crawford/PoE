@@ -20,24 +20,24 @@ use core::fmt;
 
 pub trait Phy {
     fn oui(&self, mac: &dyn Mdio) -> Oui;
-    fn link_state(&self, mac: &dyn Mdio) -> LinkState;
+    fn link_state(&self, mac: &dyn Mdio) -> Option<LinkState>;
     fn set_link_state(&mut self, mac: &dyn Mdio, state: LinkState);
     fn irq(&mut self, mac: &mut dyn Mdio);
 }
 
-#[allow(unused)]
+#[derive(Debug)]
 pub struct LinkState {
     pub speed: LinkSpeed,
     pub duplex: LinkDuplex,
 }
 
-#[allow(unused)]
+#[derive(Debug)]
 pub enum LinkSpeed {
     TenMbps,
     HundredMbps,
 }
 
-#[allow(unused)]
+#[derive(Debug)]
 pub enum LinkDuplex {
     HalfDuplex,
     FullDuplex,

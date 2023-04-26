@@ -267,9 +267,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "led"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12ac5f99ccaf58c3f13c78def8e23eb817bdca76de05cb5ed6c344111f102857"
+checksum = "86acaf203038b5187ff2fcbf43e0587e8e482521b306417a8db3b213aaeb6972"
 dependencies = [
  "embedded-hal",
 ]

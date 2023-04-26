@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::mac::Mdio;
-use crate::phy::{LinkState, Oui, Phy, Register};
+use crate::phy::{LinkDuplex, LinkSpeed, LinkState, Oui, Phy, Register};
 
 pub struct KSZ8091 {
     address: u8,
@@ -42,8 +42,29 @@ impl Phy for KSZ8091 {
         Oui([(oui as u8), ((oui >> 8) as u8), ((oui >> 16) as u8)])
     }
 
-    fn link_state(&self, _mdio: &dyn Mdio) -> LinkState {
-        unimplemented!()
+    fn link_state(&self, mdio: &dyn Mdio) -> Option<LinkState> {
+        let phy_ctrl1 = mdio.read(self.address, Register::Vendor(0x1E));
+
+        match phy_ctrl1 & 0b111 {
+            0b000 => None,
+            0b001 => Some(LinkState {
+                speed: LinkSpeed::TenMbps,
+                duplex: LinkDuplex::HalfDuplex,
+            }),
+            0b010 => Some(LinkState {
+                speed: LinkSpeed::HundredMbps,
+                duplex: LinkDuplex::HalfDuplex,
+            }),
+            0b101 => Some(LinkState {
+                speed: LinkSpeed::TenMbps,
+                duplex: LinkDuplex::FullDuplex,
+            }),
+            0b110 => Some(LinkState {
+                speed: LinkSpeed::HundredMbps,
+                duplex: LinkDuplex::FullDuplex,
+            }),
+            _ => None,
+        }
     }
 
     fn set_link_state(&mut self, _mdio: &dyn Mdio, _state: LinkState) {
