@@ -31,7 +31,7 @@ type IdentifyLed = CommonAnodeLED<pins::PE4<Output>>;
 type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
 
 #[rtic::app(
-    dispatchers = [ CAN0, CAN1 ],
+    dispatchers = [ CAN0, CAN1, LCD ],
     device = efm32gg11b820,
     peripherals = true,
 )]
@@ -45,7 +45,7 @@ mod app {
     use efm32gg_hal::cmu::CMUExt;
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
     use ignore_result::Ignore;
-    use led::mono::{CommonAnodeLED, State};
+    use led::mono::{self, CommonAnodeLED};
     use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
     use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::Instant;
@@ -68,8 +68,8 @@ mod app {
     #[shared]
     struct SharedResources {
         led_identify: IdentifyLed,
+        led_network: NetworkLed,
         network: network::Resources,
-        network_led: crate::NetworkLed,
         rtc: efm32gg11b820::RTC,
     }
 
@@ -80,7 +80,7 @@ mod app {
 
     pub struct IdentifyLed {
         led: crate::IdentifyLed,
-        state: State,
+        state: mono::State,
         spawn: Option<flash_identify_led::SpawnHandle>,
     }
 
@@ -89,7 +89,7 @@ mod app {
             IdentifyLed {
                 spawn: None,
                 led,
-                state: State::Off,
+                state: mono::State::Off,
             }
         }
 
@@ -100,19 +100,19 @@ mod app {
                     if let Some(handle) = self.spawn.take() {
                         handle.cancel().expect("cancelling flash_identify_led");
                     }
-                    self.led.set(State::Off);
-                    self.state = State::Off;
+                    self.led.set(mono::State::Off);
+                    self.state = mono::State::Off;
                 }
             }
-            self.led.set(State::Off);
-            self.state = State::Off;
+            self.led.set(mono::State::Off);
+            self.state = mono::State::Off;
         }
     }
 
-    #[task(shared = [led_identify])]
+    #[task(priority = 8, shared = [led_identify])]
     fn flash_identify_led(mut cx: flash_identify_led::Context) {
         use dwt_systick_monotonic::fugit::ExtU32;
-        use State::*;
+        use mono::State::*;
 
         cx.shared.led_identify.lock(|id| {
             id.state = match id.state {
@@ -121,6 +121,74 @@ mod app {
             };
             id.led.set(id.state);
             id.spawn = Some(schedule!(flash_identify_led, 250u32.millis()));
+        });
+    }
+
+    pub struct NetworkLed {
+        spawn: Option<occult_network_led::SpawnHandle>,
+        led: crate::NetworkLed,
+        state: mono::State,
+        network: network::State,
+        flashes: u8,
+    }
+
+    impl NetworkLed {
+        fn new(led: crate::NetworkLed) -> NetworkLed {
+            NetworkLed {
+                spawn: None,
+                led,
+                state: mono::State::On,
+                network: network::State::Uninit,
+                flashes: 0,
+            }
+        }
+
+        // This can race - link drops (NoLink) and then DHCP is handled (NoDhcp).
+        // Break this into two functions that check direction.
+        fn show(&mut self, state: network::State) {
+            self.network = state;
+            self.flashes = 0;
+
+            if let Some(handle) = self.spawn.take() {
+                handle.cancel().ignore();
+            }
+            occult_network_led::spawn().expect("spawning occult_network_led");
+        }
+    }
+
+    #[task(priority = 8, shared = [led_network])]
+    fn occult_network_led(mut cx: occult_network_led::Context) {
+        use dwt_systick_monotonic::fugit::ExtU32;
+        use mono::State::*;
+        use network::State::*;
+
+        cx.shared.led_network.lock(|net| {
+            match (net.network, net.flashes) {
+                (Uninit, _) => net.state = On,
+                (Operational, _) => net.state = Off,
+                (network, 0) => {
+                    net.flashes = match network {
+                        Uninit | Operational => 0,
+                        NoLink => 1,
+                        NoDhcp => 2,
+                        NoGateway => 3,
+                    };
+                    net.state = On;
+                    net.spawn = Some(schedule!(occult_network_led, 1000u32.millis()));
+                }
+                (_, flashes) => match net.state {
+                    Off => {
+                        net.state = On;
+                        net.flashes = flashes.saturating_sub(1);
+                        net.spawn = Some(schedule!(occult_network_led, 250u32.millis()));
+                    }
+                    On => {
+                        net.state = Off;
+                        net.spawn = Some(schedule!(occult_network_led, 250u32.millis()));
+                    }
+                },
+            }
+            net.led.set(net.state);
         });
     }
 
@@ -286,10 +354,9 @@ mod app {
         let _swo = gpio.pf2.as_output();
 
         let mut led_identify = IdentifyLed::new(CommonAnodeLED::new(gpio.pe4.as_opendrain()));
-        let mut led_net = CommonAnodeLED::new(gpio.pe5.as_opendrain());
+        let mut led_network = NetworkLed::new(CommonAnodeLED::new(gpio.pe5.as_opendrain()));
 
         led_identify.enable(false);
-        led_net.set(State::On);
 
         let mut delay = Delay::new(cx.core.SYST, 19_000_000);
         let (mac_phy, mac_addr) = EFM32GG::new(
@@ -334,17 +401,18 @@ mod app {
         ));
 
         let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
+        led_network.show(network::State::NoLink);
 
         let syst = delay.free();
         (
             SharedResources {
                 led_identify,
+                led_network,
                 network: network::Resources {
                     interface,
                     dhcp_handle,
                     tcp_handle,
                 },
-                network_led: led_net,
                 rtc,
             },
             LocalResources { spawn: None },
@@ -357,15 +425,15 @@ mod app {
         )
     }
 
-    #[task(capacity = 2, local = [spawn], shared = [led_identify, network, network_led, rtc])]
+    #[task(capacity = 2, local = [spawn], shared = [led_identify, led_network, network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
         let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
         let spawn = cx.local.spawn;
         let mut led_id = cx.shared.led_identify;
+        let mut led_net = cx.shared.led_network;
         let mut network = cx.shared.network;
-        let mut led = cx.shared.network_led;
 
         match network.lock(|network| network.interface.poll(timestamp)) {
             Ok(true) => {
@@ -373,10 +441,7 @@ mod app {
 
                 network.lock(|network| {
                     network.handle_sockets(
-                        |en| match en {
-                            false => led.lock(|led| led.set(State::On)),
-                            true => led.lock(|led| led.set(State::Off)),
-                        },
+                        |state| led_net.lock(|led| led.show(state)),
                         |en| led_id.lock(|led| led.enable(en)),
                     )
                 });
@@ -410,21 +475,36 @@ mod app {
         handle_network::spawn().ignore();
     }
 
-    #[task(binds = GPIO_ODD, shared = [network])]
+    #[task(binds = GPIO_ODD, shared = [led_network, network])]
     fn gpio_odd_irq(mut cx: gpio_odd_irq::Context) {
-        use dwt_systick_monotonic::fugit::ExtU32;
+        use dwt_systick_monotonic::ExtU32;
+        use network::State::*;
 
         // Clear the PHY interrupt
         (unsafe { &*efm32gg11b820::GPIO::ptr() })
             .ifc
             .write(|w| unsafe { w.ext().bits(1 << 13) });
 
+        // TODO: This probably should be deferred since it's reading from the PHY
+        let mut led = cx.shared.led_network;
         cx.shared.network.lock(|network| {
-            network.interface.device_mut().phy_irq();
-        });
+            let device = network.interface.device_mut();
+            device.phy_irq();
 
+            led.lock(|led| match (device.link_state().is_some(), led.network) {
+                (true, NoLink) => {
+                    log::debug!("Link acquired");
+                    led.show(NoDhcp);
+                }
+                (false, _) => {
+                    log::debug!("Link lost");
+                    led.show(NoLink);
+                }
+                _ => {}
+            });
+        });
         // TODO: Why is the one-second delay necessary? 100 ms doesn't work.
-        handle_network::spawn_after(1000u32.millis()).ignore()
+        handle_network::spawn_after(1000u32.millis()).ignore();
     }
 }
 
