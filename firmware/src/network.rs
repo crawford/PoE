@@ -28,23 +28,32 @@ pub struct Resources {
     pub tcp_handle: SocketHandle,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum State {
+    Uninit,
+    NoLink,
+    NoDhcp,
+    NoGateway,
+    Operational,
+}
+
 impl Resources {
     pub fn handle_sockets<D, I>(&mut self, dhcp: D, identify: I)
     where
-        D: FnOnce(bool),
+        D: FnOnce(State),
         I: FnOnce(bool),
     {
         self.handle_dhcp(dhcp);
         self.handle_tcp(identify);
     }
 
-    fn handle_dhcp<F: FnOnce(bool)>(&mut self, dhcp: F) {
+    fn handle_dhcp<F: FnOnce(State)>(&mut self, dhcp: F) {
         let iface = &mut self.interface;
         match iface.get_socket::<Dhcpv4Socket>(self.dhcp_handle).poll() {
             None => {}
             Some(Dhcpv4Event::Configured(config)) => {
                 log::debug!("DHCP config acquired");
-                dhcp(true);
+                dhcp(State::Operational);
 
                 log::info!("IP address: {}", config.address);
                 iface.update_ip_addrs(|addrs| addrs[0] = IpCidr::Ipv4(config.address));
@@ -65,7 +74,7 @@ impl Resources {
             }
             Some(Dhcpv4Event::Deconfigured) => {
                 log::debug!("DHCP config lost");
-                dhcp(false);
+                dhcp(State::NoDhcp);
 
                 iface.update_ip_addrs(|addrs| {
                     addrs[0] = IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))

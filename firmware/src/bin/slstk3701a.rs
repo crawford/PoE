@@ -296,9 +296,14 @@ mod app {
 
                 network.lock(|network| {
                     network.handle_sockets(
-                        |en| match en {
-                            false => led1.lock(|led| led.set(Color::Red).ignore()),
-                            true => led1.lock(|led| led.set(Color::Black).ignore()),
+                        |state| {
+                            led1.lock(|led| {
+                                led.set(match state {
+                                    network::State::Operational => Color::Black,
+                                    _ => Color::Red,
+                                })
+                                .ignore()
+                            })
                         },
                         |en| match en {
                             false => led0.lock(|led| led.set(Color::Black).ignore()),
