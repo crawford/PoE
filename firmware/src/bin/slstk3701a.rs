@@ -280,13 +280,14 @@ mod app {
         )
     }
 
-    #[task(capacity = 2, local = [spawn_handle], shared = [led0, network, rtc])]
+    #[task(capacity = 2, local = [spawn_handle], shared = [led0, led1, network, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
         let timestamp = Instant::from_millis(cx.shared.rtc.lock(|rtc| rtc.cnt.read().cnt().bits()));
         let spawn_handle = cx.local.spawn_handle;
         let mut led0 = cx.shared.led0;
+        let mut led1 = cx.shared.led1;
         let mut network = cx.shared.network;
 
         match network.lock(|network| network.interface.poll(timestamp)) {
@@ -294,10 +295,16 @@ mod app {
                 log::trace!("Handling sockets...");
 
                 network.lock(|network| {
-                    network.handle_sockets(|en| match en {
-                        false => led0.lock(|led| led.set(Color::Black).ignore()),
-                        true => led0.lock(|led| led.set(Color::Yellow).ignore()),
-                    })
+                    network.handle_sockets(
+                        |en| match en {
+                            false => led1.lock(|led| led.set(Color::Red).ignore()),
+                            true => led1.lock(|led| led.set(Color::Black).ignore()),
+                        },
+                        |en| match en {
+                            false => led0.lock(|led| led.set(Color::Black).ignore()),
+                            true => led0.lock(|led| led.set(Color::Yellow).ignore()),
+                        },
+                    )
                 });
             }
             Ok(false) => log::trace!("Nothing to do"),

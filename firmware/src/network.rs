@@ -20,48 +20,31 @@ use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 
+const CONTROL_PORT: u16 = 51900;
+
 pub struct Resources {
     pub interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
-    pub tcp_handle: SocketHandle,
     pub dhcp_handle: SocketHandle,
+    pub tcp_handle: SocketHandle,
 }
 
 impl Resources {
-    pub fn handle_sockets(&mut self) {
-        self.handle_tcp();
-        self.handle_dhcp();
+    pub fn handle_sockets<D, I>(&mut self, dhcp: D, identify: I)
+    where
+        D: FnOnce(bool),
+        I: FnOnce(bool),
+    {
+        self.handle_dhcp(dhcp);
+        self.handle_tcp(identify);
     }
 
-    fn handle_tcp(&mut self) {
-        let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
-        if !socket.is_open() {
-            socket.listen(8000).unwrap();
-        }
-
-        if socket.may_recv() {
-            let mut buffer = [0; 1024];
-            let msg = socket
-                .recv(|b| {
-                    let len = b.len();
-                    buffer[0..len].copy_from_slice(b);
-                    (len, &buffer[0..len])
-                })
-                .unwrap();
-
-            if socket.can_send() && !msg.is_empty() {
-                socket.send_slice(msg).unwrap();
-            }
-        } else if socket.may_send() {
-            socket.close();
-        }
-    }
-
-    fn handle_dhcp(&mut self) {
+    fn handle_dhcp<F: FnOnce(bool)>(&mut self, dhcp: F) {
         let iface = &mut self.interface;
         match iface.get_socket::<Dhcpv4Socket>(self.dhcp_handle).poll() {
             None => {}
             Some(Dhcpv4Event::Configured(config)) => {
                 log::debug!("DHCP config acquired");
+                dhcp(true);
 
                 log::info!("IP address: {}", config.address);
                 iface.update_ip_addrs(|addrs| addrs[0] = IpCidr::Ipv4(config.address));
@@ -82,11 +65,36 @@ impl Resources {
             }
             Some(Dhcpv4Event::Deconfigured) => {
                 log::debug!("DHCP config lost");
+                dhcp(false);
+
                 iface.update_ip_addrs(|addrs| {
                     addrs[0] = IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))
                 });
                 iface.routes_mut().remove_default_ipv4_route();
             }
+        }
+    }
+
+    fn handle_tcp<F: FnOnce(bool)>(&mut self, identify: F) {
+        let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
+        if !socket.is_open() {
+            socket.listen(CONTROL_PORT).unwrap();
+        }
+
+        if socket.may_recv() {
+            socket
+                .recv(|b| {
+                    let len = b.len();
+                    match b.iter().next() {
+                        Some(b'0') => identify(false),
+                        Some(b'1') => identify(true),
+                        _ => {}
+                    }
+                    (len, ())
+                })
+                .unwrap();
+
+            socket.close();
         }
     }
 }

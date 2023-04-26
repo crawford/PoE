@@ -38,6 +38,7 @@ type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
 mod app {
     use poe::efm32gg::{self, dma, EFM32GG};
     use poe::ksz8091::KSZ8091;
+    use poe::network;
 
     use core::pin::Pin;
     use cortex_m::{delay::Delay, interrupt};
@@ -45,15 +46,10 @@ mod app {
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
     use ignore_result::Ignore;
     use led::mono::{CommonAnodeLED, State};
-    use smoltcp::iface::{
-        Interface, InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketHandle,
-        SocketStorage,
-    };
-    use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
+    use smoltcp::iface::{InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage};
+    use smoltcp::socket::{Dhcpv4Socket, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::Instant;
     use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv4Cidr};
-
-    const CONTROL_PORT: u16 = 51900;
 
     #[monotonic(binds = SysTick, default = true)]
     type Monotonic = dwt_systick_monotonic::DwtSystick<25_000_000>; // 25 MHz
@@ -72,87 +68,14 @@ mod app {
     #[shared]
     struct SharedResources {
         id: IdLed,
-        network: NetworkResources,
+        network: network::Resources,
+        network_led: crate::NetworkLed,
         rtc: efm32gg11b820::RTC,
     }
 
     #[local]
     struct LocalResources {
         spawn: Option<handle_network::SpawnHandle>,
-    }
-
-    pub struct NetworkResources {
-        dhcp_handle: SocketHandle,
-        interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
-        led: crate::NetworkLed,
-        tcp_handle: SocketHandle,
-    }
-
-    impl NetworkResources {
-        fn handle_sockets(&mut self, id: &mut IdLed) {
-            self.handle_dhcp();
-            self.handle_tcp(id);
-        }
-
-        fn handle_dhcp(&mut self) {
-            let iface = &mut self.interface;
-            match iface.get_socket::<Dhcpv4Socket>(self.dhcp_handle).poll() {
-                None => {}
-                Some(Dhcpv4Event::Configured(config)) => {
-                    log::debug!("DHCP config acquired");
-                    self.led.set(State::Off);
-
-                    log::info!("IP address: {}", config.address);
-                    iface.update_ip_addrs(|addrs| addrs[0] = IpCidr::Ipv4(config.address));
-
-                    if let Some(router) = config.router {
-                        log::debug!("Default gateway: {}", router);
-                        iface.routes_mut().add_default_ipv4_route(router).unwrap();
-                    } else {
-                        log::debug!("Default gateway: None");
-                        iface.routes_mut().remove_default_ipv4_route();
-                    }
-
-                    for (i, s) in config.dns_servers.iter().enumerate() {
-                        if let Some(s) = s {
-                            log::debug!("DNS server {}:    {}", i, s);
-                        }
-                    }
-                }
-                Some(Dhcpv4Event::Deconfigured) => {
-                    log::debug!("DHCP config lost");
-                    self.led.set(State::On);
-
-                    iface.update_ip_addrs(|addrs| {
-                        addrs[0] = IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))
-                    });
-                    iface.routes_mut().remove_default_ipv4_route();
-                }
-            }
-        }
-
-        fn handle_tcp(&mut self, id: &mut IdLed) {
-            let socket = self.interface.get_socket::<TcpSocket>(self.tcp_handle);
-            if !socket.is_open() {
-                socket.listen(CONTROL_PORT).unwrap();
-            }
-
-            if socket.may_recv() {
-                socket
-                    .recv(|b| {
-                        let len = b.len();
-                        match b.iter().next() {
-                            Some(b'0') => id.stop(),
-                            Some(b'1') => id.start(),
-                            _ => {}
-                        }
-                        (len, ())
-                    })
-                    .unwrap();
-
-                socket.close();
-            }
-        }
     }
 
     pub struct IdLed {
@@ -394,12 +317,12 @@ mod app {
                     state: State::Off,
                     spawn: None,
                 },
-                network: NetworkResources {
+                network: network::Resources {
                     interface,
                     dhcp_handle,
                     tcp_handle,
-                    led: led_net,
                 },
+                network_led: led_net,
                 rtc,
             },
             LocalResources { spawn: None },
@@ -412,7 +335,7 @@ mod app {
         )
     }
 
-    #[task(capacity = 2, local = [spawn], shared = [id, network, rtc])]
+    #[task(capacity = 2, local = [spawn], shared = [id, network, network_led, rtc])]
     fn handle_network(mut cx: handle_network::Context) {
         log::trace!("Handling network...");
 
@@ -420,12 +343,24 @@ mod app {
         let spawn = cx.local.spawn;
         let mut id = cx.shared.id;
         let mut network = cx.shared.network;
+        let mut led = cx.shared.network_led;
 
         match network.lock(|network| network.interface.poll(timestamp)) {
             Ok(true) => {
                 log::trace!("Handling sockets...");
 
-                id.lock(|id| network.lock(|network| network.handle_sockets(id)));
+                network.lock(|network| {
+                    network.handle_sockets(
+                        |en| match en {
+                            false => led.lock(|led| led.set(State::On)),
+                            true => led.lock(|led| led.set(State::Off)),
+                        },
+                        |en| match en {
+                            false => id.lock(|led| led.stop()),
+                            true => id.lock(|led| led.start()),
+                        },
+                    )
+                });
             }
             Ok(false) => log::trace!("Nothing to do"),
             Err(err) => log::error!("Failed to poll network interface: {}", err),
