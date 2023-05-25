@@ -17,6 +17,7 @@
 
 pub mod efm32gg;
 pub mod ksz8091;
+pub mod log;
 pub mod mac;
 pub mod network;
 pub mod phy;

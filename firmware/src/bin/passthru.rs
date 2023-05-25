@@ -54,11 +54,6 @@ mod app {
     #[monotonic(binds = SysTick, default = true)]
     type Monotonic = dwt_systick_monotonic::DwtSystick<25_000_000>; // 25 MHz
 
-    #[cfg(feature = "logging")]
-    type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
-    #[cfg(feature = "logging")]
-    static mut LOGGER: core::mem::MaybeUninit<Logger> = core::mem::MaybeUninit::uninit();
-
     macro_rules! schedule {
         ($name:ident, $duration:expr) => {
             $name::spawn_after($duration).expect(concat!("scheduling ", stringify!($name)))
@@ -209,6 +204,8 @@ mod app {
         ]
     )]
     fn init(mut cx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
+        use log::LevelFilter::*;
+
         let cmu = cx.device.CMU;
         let emu = cx.device.EMU;
         let gpio = cx.device.GPIO;
@@ -217,40 +214,22 @@ mod app {
         // Switch to Power Configuration 1 (section 9.3.4.2) - power the digital LDO from DVDD
         emu.pwrctrl.write(|reg| reg.regpwrsel().set_bit());
 
-        #[cfg(feature = "logging")]
-        {
-            use cortex_m_log::destination::Itm;
-            use cortex_m_log::printer::itm::InterruptSync;
+        // Enable the HFRCO
+        cmu.oscencmd.write(|reg| reg.hfrcoen().set_bit());
+        while cmu.status.read().hfrcoens().bit_is_clear() {}
 
-            // Enable the GPIO peripheral
-            cmu.hfbusclken0.write(|reg| reg.gpio().set_bit());
+        // Wait for HFRCO to stabilize
+        while cmu.status.read().hfrcordy().bit_is_clear() {}
 
-            // Enable the Serial Wire Viewer (ITM on SWO)
-            gpio.routepen.write(|reg| reg.swvpen().set_bit());
-            gpio.pf_model.modify(|_, w| w.mode2().pushpull());
+        // Enable the GPIO peripheral
+        cmu.hfbusclken0.write(|reg| reg.gpio().set_bit());
 
-            // Enable the HFRCO
-            cmu.oscencmd.write(|reg| reg.hfrcoen().set_bit());
-            while cmu.status.read().hfrcoens().bit_is_clear() {}
-
-            // Wait for HFX0 to stabilize
-            while cmu.status.read().hfrcordy().bit_is_clear() {}
-
-            // Use the HFRCO divided by two (9.5 MHz) for the ITM
-            cmu.dbgclksel.write(|reg| reg.dbg().hfrcodiv2());
-
-            let logger = Logger {
-                inner: InterruptSync::new(Itm::new(cx.core.ITM)),
-                level: log::LevelFilter::Info,
-            };
-
-            unsafe {
-                LOGGER = core::mem::MaybeUninit::new(logger);
-                cortex_m_log::log::trick_init(LOGGER.assume_init_ref()).unwrap();
-            }
-
-            log::info!("Logger online!");
-        };
+        // Initialize logging
+        let logger = poe::log::init();
+        #[cfg(feature = "rtt")]
+        logger.add_rtt(poe::log::rtt::new(Debug));
+        #[cfg(feature = "itm")]
+        logger.add_itm(poe::log::itm::new(Info, &cmu, &gpio, cx.core.ITM));
 
         // Configure the HFXO's tuning capacitance to 10 pF
         cmu.hfxostartupctrl

@@ -16,6 +16,7 @@ dwt-systick-monotonic = "1.0.0"
 ignore-result = "0.2.0"
 led = "0.3.1"
 log = "0.4.8"
+rtt-target = { version = "0.3.1", features = [ "cortex-m" ], optional = true }
 smoltcp = { version = "0.8.0", default-features = false, features = [ "socket-dhcpv4", "socket-tcp" ] }
 
 [profile.dev]
@@ -26,6 +27,7 @@ lto = true
 opt-level = "s"
 
 [features]
-default = [ "logging" ]
-logging = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
+default = [ "itm", "rtt" ]
+itm = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
+rtt = [ "rtt-target", "smoltcp/log" ]
 silent = [ "log/max_level_off" ]

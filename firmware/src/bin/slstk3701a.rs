@@ -65,11 +65,6 @@ mod app {
         spawn_handle: Option<handle_network::SpawnHandle>,
     }
 
-    #[cfg(feature = "logging")]
-    type Logger = cortex_m_log::log::Logger<cortex_m_log::printer::itm::InterruptSync>;
-    #[cfg(feature = "logging")]
-    static mut LOGGER: core::mem::MaybeUninit<Logger> = core::mem::MaybeUninit::uninit();
-
     #[init(
         local = [
              eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
@@ -118,8 +113,17 @@ mod app {
             reg
         });
 
-        // Enable the Serial Wire Viewer (ITM on SWO)
-        cx.device.GPIO.routepen.write(|reg| reg.swvpen().set_bit());
+        // Initialize logging
+        let logger = poe::log::init();
+        #[cfg(feature = "rtt")]
+        logger.add_rtt(poe::log::rtt::new(log::LevelFilter::Debug));
+        #[cfg(feature = "itm")]
+        logger.add_itm(poe::log::itm::new(
+            log::LevelFilter::Info,
+            &cx.device.CMU,
+            &cx.device.GPIO,
+            cx.core.ITM,
+        ));
 
         // Enable the RTC and set it to 1000Hz
         cx.device.CMU.lfaclksel.write(|reg| reg.lfa().ulfrco());
@@ -173,7 +177,6 @@ mod app {
             .write(|w| unsafe { w.ext().bits(1 << 15) });
 
         let gpio = cx.device.GPIO.split(gpio_clk);
-        let _swo = gpio.pf2.as_output();
 
         let mut led0 = rgb::CommonAnodeLED::new(
             gpio.ph10.as_opendrain(),
@@ -423,15 +426,12 @@ pub unsafe fn steal_leds() -> (LED0, LED1) {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
-    let itm = unsafe { &mut *cortex_m::peripheral::ITM::ptr() };
 
     cortex_m::interrupt::disable();
 
     let now = Instant::from_millis(rtc.cnt.read().cnt().bits());
-    let stim = &mut itm.stim[0];
 
-    log::error!("Panic at {}", now);
-    cortex_m::iprintln!(stim, "{}", info);
+    log::error!("Panic at {}: {}", now, info);
 
     if cortex_m::peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
