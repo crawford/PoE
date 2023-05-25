@@ -487,7 +487,7 @@ mod app {
     }
 }
 
-// Light up both LEDs red, trigger a breakpoint, and loop
+// Light up both LEDs, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
 fn DefaultHandler(irqn: i16) {
     use mono::State::*;
@@ -495,9 +495,9 @@ fn DefaultHandler(irqn: i16) {
     interrupt::disable();
 
     log::error!("Default Handler: irq {}", irqn);
-    let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(On);
-    led1.set(On);
+    let (mut id, mut net) = unsafe { steal_leds() };
+    id.set(On);
+    net.set(On);
 
     if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
@@ -508,7 +508,7 @@ fn DefaultHandler(irqn: i16) {
     }
 }
 
-// Light up both LEDs red, trigger a breakpoint, and loop
+// Light up both LEDs, trigger a breakpoint, and loop
 #[cortex_m_rt::exception]
 fn HardFault(frame: &cortex_m_rt::ExceptionFrame) -> ! {
     use mono::State::*;
@@ -516,9 +516,9 @@ fn HardFault(frame: &cortex_m_rt::ExceptionFrame) -> ! {
     interrupt::disable();
 
     log::error!("Hard Fault: {:?}", frame);
-    let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(On);
-    led1.set(On);
+    let (mut id, mut net) = unsafe { steal_leds() };
+    id.set(On);
+    net.set(On);
 
     if peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
@@ -546,6 +546,8 @@ pub unsafe fn steal_leds() -> (IdentifyLed, NetworkLed) {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    use mono::State::*;
+
     let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
     let itm = unsafe { &mut *cortex_m::peripheral::ITM::ptr() };
 
@@ -556,6 +558,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
     log::error!("Panic at {}", now);
     cortex_m::iprintln!(stim, "{}", info);
+
+    let (mut id, mut net) = unsafe { steal_leds() };
+    id.set(On);
+    net.set(On);
 
     if cortex_m::peripheral::DCB::is_debugger_attached() {
         asm::bkpt();
