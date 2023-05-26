@@ -133,6 +133,10 @@ Available commands:
     pub fn new() -> &'static mut Terminal {
         let terminal = unsafe { TERMINAL.assume_init_mut() };
 
+        // Clear the buffer
+        let mut input = [0u8; 1024];
+        terminal.input.read(&mut input);
+
         outputln!(terminal.output);
         output!(terminal.output, Self::PROMPT_STR);
         terminal
