@@ -191,16 +191,18 @@ mod app {
 
     #[init(
         local = [
-             eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
-             eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
-             eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
-             eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
-             tcp_rx_payload: [u8; 128] = [0; 128],
-             tcp_tx_payload: [u8; 128] = [0; 128],
+            eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
+            eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
+            eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
+            eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
+            tcp_rx_payload: [u8; 128] = [0; 128],
+            tcp_tx_payload: [u8; 128] = [0; 128],
+            http_rx_payload: [u8; 128] = [0; 128],
+            http_tx_payload: [u8; 1024] = [0; 1024],
 
-             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
-             ip_addresses: [IpCidr; 1] =
+            neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
+            sockets: [SocketStorage<'static>; 3] = [SocketStorage::EMPTY; 3],
+            ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 4] = [None; 4],
         ]
