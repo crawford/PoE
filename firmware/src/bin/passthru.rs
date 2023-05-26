@@ -42,6 +42,7 @@ mod app {
 
     use core::pin::Pin;
     use cortex_m::{delay::Delay, interrupt};
+    use dwt_systick_monotonic::ExtU32;
     use efm32gg_hal::cmu::CMUExt;
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
     use ignore_result::Ignore;
@@ -71,6 +72,9 @@ mod app {
     #[local]
     struct LocalResources {
         spawn: Option<handle_network::SpawnHandle>,
+
+        #[cfg(feature = "rtt")]
+        terminal: &'static mut poe::log::rtt::Terminal,
     }
 
     pub struct IdentifyLed {
@@ -106,7 +110,6 @@ mod app {
 
     #[task(priority = 8, shared = [led_identify])]
     fn flash_identify_led(mut cx: flash_identify_led::Context) {
-        use dwt_systick_monotonic::fugit::ExtU32;
         use mono::State::*;
 
         cx.shared.led_identify.lock(|id| {
@@ -153,7 +156,6 @@ mod app {
 
     #[task(priority = 8, shared = [led_network])]
     fn occult_network_led(mut cx: occult_network_led::Context) {
-        use dwt_systick_monotonic::fugit::ExtU32;
         use mono::State::*;
         use network::State::*;
 
@@ -382,6 +384,9 @@ mod app {
         let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
         led_network.show(network::State::NoLink);
 
+        #[cfg(feature = "rtt")]
+        handle_terminal::spawn().expect("spawn handle_terminal");
+
         let syst = delay.free();
         (
             SharedResources {
@@ -394,7 +399,12 @@ mod app {
                 },
                 rtc,
             },
-            LocalResources { spawn: None },
+            LocalResources {
+                spawn: None,
+
+                #[cfg(feature = "rtt")]
+                terminal: poe::log::rtt::Terminal::new(),
+            },
             init::Monotonics(Monotonic::new(
                 &mut cx.core.DCB,
                 cx.core.DWT,
@@ -430,7 +440,6 @@ mod app {
         }
 
         if let Some(delay) = network.lock(|network| network.interface.poll_delay(timestamp)) {
-            use dwt_systick_monotonic::fugit::ExtU32;
             log::trace!("Scheduling network handling in {}", delay);
 
             let delay = (delay.total_millis() as u32).millis();
@@ -456,7 +465,6 @@ mod app {
 
     #[task(binds = GPIO_ODD, shared = [led_network, network])]
     fn gpio_odd_irq(mut cx: gpio_odd_irq::Context) {
-        use dwt_systick_monotonic::ExtU32;
         use network::State::*;
 
         // Clear the PHY interrupt
@@ -487,6 +495,13 @@ mod app {
         });
         // TODO: Why is the one-second delay necessary? 100 ms doesn't work.
         handle_network::spawn_after(1000u32.millis()).ignore();
+    }
+
+    #[cfg(feature = "rtt")]
+    #[task(local = [terminal])]
+    fn handle_terminal(cx: handle_terminal::Context) {
+        cx.local.terminal.poll();
+        handle_terminal::spawn_after(100u32.millis()).expect("schedule handle_terminal");
     }
 }
 
