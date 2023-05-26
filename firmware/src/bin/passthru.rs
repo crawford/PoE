@@ -566,16 +566,13 @@ pub unsafe fn steal_leds() -> (IdentifyLed, NetworkLed) {
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use mono::State::*;
 
-    let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
-    let itm = unsafe { &mut *cortex_m::peripheral::ITM::ptr() };
-
     cortex_m::interrupt::disable();
 
+    let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
     let now = Instant::from_millis(rtc.cnt.read().cnt().bits());
-    let stim = &mut itm.stim[0];
 
     log::error!("Panic at {}", now);
-    cortex_m::iprintln!(stim, "{}", info);
+    log::error!("{}", info);
 
     let (mut id, mut net) = unsafe { steal_leds() };
     id.set(On);
