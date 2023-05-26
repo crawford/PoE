@@ -16,7 +16,7 @@
 #![cfg(feature = "rtt")]
 
 use core::fmt::Write;
-use core::mem::MaybeUninit;
+use core::mem::{self, MaybeUninit};
 use core::str;
 use ignore_result::Ignore;
 use rtt_target::{DownChannel, UpChannel};
@@ -125,7 +125,9 @@ impl Terminal {
 
 Available commands:
 
-  help  Display this help text";
+  get <hex address>                Read address
+  set <hex address> <hex value>    Write value to address
+  help                             Display this help text";
     const PROMPT_STR: &'static str = "> ";
 
     pub fn new() -> &'static mut Terminal {
@@ -153,9 +155,52 @@ Available commands:
         .trim()
         .split(' ');
 
+        macro_rules! token_u32 {
+            ($name:literal) => {
+                match tokens.next() {
+                    Some(val) => match u32::from_str_radix(val, 16) {
+                        Ok(val) => val,
+                        Err(err) => {
+                            output!(self.output, concat!("Failed to parse ", $name));
+                            outputln!(self.output, " ({val}): {err}");
+                            return;
+                        }
+                    },
+                    None => {
+                        outputln!(self.output, Self::HELP_STR);
+                        return;
+                    }
+                }
+            };
+        }
+
         match tokens.next() {
             Some("") | None => {}
             Some("help") => outputln!(self.output, Self::HELP_STR),
+            Some("get") => {
+                let addr = token_u32!("addr") as usize;
+                match addr % mem::size_of::<u32>() {
+                    0 => {
+                        let data = unsafe { *(addr as *const u32) };
+                        outputln!(self.output, "0x{data:08X}");
+                    }
+                    2 => {
+                        let data = unsafe { *(addr as *const u16) };
+                        outputln!(self.output, "0x{data:04X}");
+                    }
+                    1 | 3 => {
+                        let data = unsafe { *(addr as *const u8) };
+                        outputln!(self.output, "0x{data:02X}");
+                    }
+                    val => log::error!("unhandled val: {val}"),
+                }
+            }
+            Some("set") => {
+                let addr = token_u32!("addr");
+                let value = token_u32!("value");
+                unsafe { *(addr as *mut u32) = value };
+            }
+            Some(command) => outputln!(self.output, "Unrecognized command: {command} (try 'help')"),
         }
 
         output!(self.output, Self::PROMPT_STR);
