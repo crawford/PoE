@@ -60,6 +60,7 @@ impl<'a, P: Phy> EFM32GG<'a, P> {
         // - 10BASE-T (Half-Duplex)
         // - No Pause
         // - No next page capability (recommended by data sheet)
+        #[allow(clippy::unusual_byte_groupings)]
         rmii.write(phy_addr, Register::AutoAdvertisement, 0b000000_00001_00001);
 
         let mac_addr = EthernetAddress([oui.0[0], oui.0[1], oui.0[2], 0x00, 0x00, 0x01]);
