@@ -25,6 +25,10 @@ static mut LOGGER: Logger = Logger {
 };
 
 pub fn init() -> &'static Logger {
+    assert!(
+        cortex_m::singleton!(: bool = false).is_some(),
+        "logger already initialized"
+    );
     let logger = unsafe { &LOGGER };
     log::set_logger(logger).expect("set_logger");
     logger
