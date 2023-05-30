@@ -13,36 +13,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use core::mem::MaybeUninit;
+
 pub mod itm;
 pub mod rtt;
 
-static mut LOGGER: Logger = Logger {
-    #[cfg(feature = "itm")]
-    itm: None,
+static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
 
-    #[cfg(feature = "rtt")]
-    rtt: None,
-};
+pub fn init() -> InitializedLogger {
+    static mut INITIALIZED: bool = false;
+    assert!(unsafe { !INITIALIZED }, "logger already initialized");
+    unsafe { INITIALIZED = true };
 
-pub fn init() -> &'static Logger {
-    let logger = unsafe { &LOGGER };
-    log::set_logger(logger).expect("set_logger");
-    logger
+    log::set_logger(unsafe {
+        LOGGER.write(Logger {
+            #[cfg(feature = "itm")]
+            itm: None,
+
+            #[cfg(feature = "rtt")]
+            rtt: None,
+        })
+    })
+    .expect("set_logger");
+
+    InitializedLogger {}
 }
 
-pub struct Logger {
-    #[cfg(feature = "itm")]
-    itm: Option<itm::Logger>,
+#[non_exhaustive]
+pub struct InitializedLogger {}
 
-    #[cfg(feature = "rtt")]
-    rtt: Option<rtt::Logger>,
-}
-
-impl Logger {
+impl InitializedLogger {
     #[cfg(feature = "itm")]
     pub fn add_itm(&self, logger: itm::Logger) -> &Self {
         log::set_max_level(log::max_level().max(logger.level));
-        unsafe { LOGGER.itm = Some(logger) };
+        unsafe { LOGGER.assume_init_mut().itm = Some(logger) };
+
         log::info!("ITM logging online!");
         self
     }
@@ -50,10 +55,19 @@ impl Logger {
     #[cfg(feature = "rtt")]
     pub fn add_rtt(&self, logger: rtt::Logger) -> &Self {
         log::set_max_level(log::max_level().max(logger.level));
-        unsafe { LOGGER.rtt = Some(logger) };
+        unsafe { LOGGER.assume_init_mut().rtt = Some(logger) };
+
         log::info!("RTT logging online!");
         self
     }
+}
+
+struct Logger {
+    #[cfg(feature = "itm")]
+    itm: Option<itm::Logger>,
+
+    #[cfg(feature = "rtt")]
+    rtt: Option<rtt::Logger>,
 }
 
 impl log::Log for Logger {
