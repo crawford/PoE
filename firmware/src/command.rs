@@ -23,6 +23,7 @@ Available commands:
   get <hex address>                Read address
   set <hex address> <hex value>    Write value to address
   help                             Display this help text";
+const PROMPT_STR: &str = "> ";
 
 pub fn interpret<S, W>(command: S, output: &mut W)
 where
@@ -42,55 +43,72 @@ where
         };
     }
 
-    let mut tokens = command.as_ref().trim().split(' ');
-
-    macro_rules! token_u32 {
-        ($name:literal) => {
-            match tokens.next() {
-                Some(val) => match u32::from_str_radix(val, 16) {
-                    Ok(val) => val,
-                    Err(err) => {
-                        output!(concat!("Failed to parse ", $name));
-                        output!(" ({val}): {err}");
-                        return;
-                    }
-                },
-                None => {
-                    output!(HELP_STR);
-                    return;
-                }
-            }
+    macro_rules! outputln {
+        () => {
+            output!("\n\r")
         };
+        ($arg:tt) => {{
+            output!($arg);
+            outputln!()
+        }};
     }
 
-    match tokens.next() {
-        Some("") | None => {}
-        Some("help") => output!(HELP_STR),
-        Some("get") => {
-            let addr = token_u32!("addr") as usize;
-            match addr % mem::size_of::<u32>() {
-                0 => {
-                    let data = unsafe { *(addr as *const u32) };
-                    output!("0x{data:08X}");
+    let mut tokens = command.as_ref().trim().split(' ');
+    'parse: {
+        macro_rules! token_hex_u32 {
+            ($name:literal) => {
+                match tokens.next() {
+                    Some(arg) => match arg.strip_prefix("0x") {
+                        Some(val) => match u32::from_str_radix(val, 16) {
+                            Ok(val) => val,
+                            Err(err) => {
+                                let name = $name;
+                                outputln!("Failed to parse {name} ({val}): {err}");
+                                break 'parse;
+                            }
+                        },
+                        None => {
+                            outputln!("Hexadecimal argument must begin with '0x'");
+                            break 'parse;
+                        }
+                    },
+                    None => {
+                        outputln!(HELP_STR);
+                        break 'parse;
+                    }
                 }
-                2 => {
-                    let data = unsafe { *(addr as *const u16) };
-                    output!("0x{data:04X}");
+            };
+        }
+
+        match tokens.next() {
+            Some("") | None => {}
+            Some("help") => outputln!(HELP_STR),
+            Some("get") => {
+                let addr = token_hex_u32!("addr") as usize;
+                match addr % mem::size_of::<u32>() {
+                    0 => {
+                        let data = unsafe { *(addr as *const u32) };
+                        outputln!("0x{data:08X}");
+                    }
+                    2 => {
+                        let data = unsafe { *(addr as *const u16) };
+                        outputln!("0x{data:04X}");
+                    }
+                    1 | 3 => {
+                        let data = unsafe { *(addr as *const u8) };
+                        outputln!("0x{data:02X}");
+                    }
+                    _ => unreachable!(),
                 }
-                1 | 3 => {
-                    let data = unsafe { *(addr as *const u8) };
-                    output!("0x{data:02X}");
-                }
-                val => log::error!("unhandled val: {val}"),
             }
+            Some("set") => {
+                let addr = token_hex_u32!("addr");
+                let value = token_hex_u32!("value");
+                unsafe { *(addr as *mut u32) = value };
+            }
+            Some(command) => outputln!("Unrecognized command: {command} (try 'help')"),
         }
-        Some("set") => {
-            let addr = token_u32!("addr");
-            let value = token_u32!("value");
-            unsafe { *(addr as *mut u32) = value };
-        }
-        Some(command) => output!("Unrecognized command: {command} (try 'help')"),
     }
 
-    output!("\n\r> ");
+    output!(PROMPT_STR);
 }
