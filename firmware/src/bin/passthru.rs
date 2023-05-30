@@ -199,8 +199,13 @@ mod app {
             http_rx_payload: [u8; 128] = [0; 128],
             http_tx_payload: [u8; 1024] = [0; 1024],
 
+            #[cfg(feature = "telnet")]
+            telnet_rx_payload: [u8; 1024] = [0; 1024],
+            #[cfg(feature = "telnet")]
+            telnet_tx_payload: [u8; 1024] = [0; 1024],
+
             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-            sockets: [SocketStorage<'static>; 3] = [SocketStorage::EMPTY; 3],
+            sockets: [SocketStorage<'static>; 4] = [SocketStorage::EMPTY; 4],
             ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 4] = [None; 4],
@@ -385,6 +390,13 @@ mod app {
         ));
 
         let dhcp_handle = interface.add_socket(Dhcpv4Socket::new());
+
+        #[cfg(feature = "telnet")]
+        let telnet_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.telnet_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.telnet_tx_payload.as_mut()),
+        ));
+
         led_network.show(network::State::NoLink);
 
         #[cfg(feature = "rtt")]
@@ -399,6 +411,9 @@ mod app {
                     interface,
                     dhcp_handle,
                     tcp_handle,
+
+                    #[cfg(feature = "telnet")]
+                    telnet_handle,
                 },
                 rtc,
             },

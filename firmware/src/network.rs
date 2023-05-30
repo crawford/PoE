@@ -13,19 +13,29 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#[cfg(feature = "telnet")]
+use crate::command;
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
 
+#[cfg(feature = "telnet")]
+use core::str;
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 
 const CONTROL_PORT: u16 = 51900;
 
+#[cfg(feature = "telnet")]
+const TELNET_PORT: u16 = 23;
+
 pub struct Resources {
     pub interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
     pub dhcp_handle: SocketHandle,
     pub tcp_handle: SocketHandle,
+
+    #[cfg(feature = "telnet")]
+    pub telnet_handle: SocketHandle,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,6 +55,9 @@ impl Resources {
     {
         self.handle_dhcp(dhcp);
         self.handle_tcp(identify);
+
+        #[cfg(feature = "telnet")]
+        self.handle_telnet();
     }
 
     pub fn reset_dhcp(&mut self) {
@@ -110,6 +123,52 @@ impl Resources {
                 .unwrap();
 
             socket.close();
+        }
+    }
+
+    #[cfg(feature = "telnet")]
+    fn handle_telnet(&mut self) {
+        const DO: u8 = 253;
+        const WILL: u8 = 251;
+        const IAC: u8 = 255;
+
+        let socket = self.interface.get_socket::<TcpSocket>(self.telnet_handle);
+
+        if !socket.is_open() {
+            socket.listen(TELNET_PORT).unwrap();
+        }
+
+        if socket.can_recv() && socket.can_send() {
+            let mut data = [0; 128];
+            let request = socket
+                .recv(|b| {
+                    data[..b.len()].copy_from_slice(b);
+                    (b.len(), &data[..b.len()])
+                })
+                .expect("receiving from telnet");
+
+            let mut bytes = request.iter();
+            while bytes.as_ref().get(0) == Some(&IAC) {
+                bytes.next();
+                match bytes.next() {
+                    Some(&DO | &WILL) => match bytes.next() {
+                        Some(option) => log::debug!("ignoring telnet option code: {option}"),
+                        None => log::debug!("ignoring malformed telnet DO/WILL command"),
+                    },
+                    Some(code) => log::debug!("ignoring telnet command: {code}"),
+                    None => log::debug!("ignoring malformed telnet command"),
+                }
+            }
+
+            let input = match str::from_utf8(bytes.as_slice()) {
+                Ok(text) => text,
+                Err(err) => {
+                    log::warn!("failed to parse telnet input ({bytes:?}): {err}");
+                    ""
+                }
+            };
+
+            command::interpret(input, socket);
         }
     }
 }
