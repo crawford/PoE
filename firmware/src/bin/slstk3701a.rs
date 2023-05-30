@@ -76,6 +76,11 @@ mod app {
             tcp_rx_payload: [u8; 1024] = [0; 1024],
             tcp_tx_payload: [u8; 1024] = [0; 1024],
 
+            #[cfg(feature = "telnet")]
+            telnet_rx_payload: [u8; 1024] = [0; 1024],
+            #[cfg(feature = "telnet")]
+            telnet_tx_payload: [u8; 1024] = [0; 1024],
+
             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
             sockets: [SocketStorage<'static>; 3] = [SocketStorage::EMPTY; 3],
             ip_addresses: [IpCidr; 1] =
@@ -263,6 +268,12 @@ mod app {
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
 
+        #[cfg(feature = "telnet")]
+        let telnet_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.telnet_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.telnet_tx_payload.as_mut()),
+        ));
+
         let mut dhcp_socket = Dhcpv4Socket::new();
         // XXX: just for testing
         dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(60)));
@@ -278,6 +289,10 @@ mod app {
                     dhcp_handle,
                     http_handle,
                     tcp_handle,
+
+                    #[cfg(feature = "telnet")]
+                    telnet_handle,
+
                     id_active: false,
                 },
                 rtc: cx.device.RTC,
