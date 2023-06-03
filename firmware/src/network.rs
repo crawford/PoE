@@ -128,8 +128,9 @@ impl Resources {
 
     #[cfg(feature = "telnet")]
     fn handle_telnet(&mut self) {
-        const DO: u8 = 253;
+        const EOF: u8 = 236;
         const WILL: u8 = 251;
+        const DO: u8 = 253;
         const IAC: u8 = 255;
 
         let socket = self.interface.get_socket::<TcpSocket>(self.telnet_handle);
@@ -155,6 +156,10 @@ impl Resources {
                         Some(option) => log::debug!("ignoring telnet option code: {option}"),
                         None => log::debug!("ignoring malformed telnet DO/WILL command"),
                     },
+                    Some(&EOF) => {
+                        socket.close();
+                        return;
+                    }
                     Some(code) => log::debug!("ignoring telnet command: {code}"),
                     None => log::debug!("ignoring malformed telnet command"),
                 }
