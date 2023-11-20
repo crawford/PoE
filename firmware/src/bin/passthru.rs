@@ -35,6 +35,7 @@ type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
     peripherals = true,
 )]
 mod app {
+    use poe::command::{Interpreter, InterpreterMode};
     use poe::efm32gg::{self, dma, EFM32GG};
     use poe::ksz8091::KSZ8091;
     use poe::network;
@@ -414,6 +415,11 @@ mod app {
 
                     #[cfg(feature = "telnet")]
                     telnet_handle,
+
+                    #[cfg(feature = "telnet")]
+                    interpreter: Interpreter::new(),
+                    #[cfg(feature = "telnet")]
+                    prev_mode: InterpreterMode::Command,
                 },
                 rtc,
             },

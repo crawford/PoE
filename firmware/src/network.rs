@@ -14,12 +14,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #[cfg(feature = "telnet")]
-use crate::command;
+use crate::command::{Interpreter, InterpreterMode};
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
 
-#[cfg(feature = "telnet")]
-use core::str;
+use ignore_result::Ignore;
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
 use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
@@ -36,6 +35,11 @@ pub struct Resources {
 
     #[cfg(feature = "telnet")]
     pub telnet_handle: SocketHandle,
+
+    #[cfg(feature = "telnet")]
+    pub interpreter: Interpreter,
+    #[cfg(feature = "telnet")]
+    pub prev_mode: InterpreterMode,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -128,12 +132,76 @@ impl Resources {
 
     #[cfg(feature = "telnet")]
     fn handle_telnet(&mut self) {
+        use InterpreterMode::*;
+        #[allow(unused)]
+        use TelnetCommands::*;
+        #[allow(unused)]
+        use TelnetOptions::*;
+
         const EOF: u8 = 236;
+        const IP: u8 = 244;
         const WILL: u8 = 251;
+        const WONT: u8 = 252;
         const DO: u8 = 253;
+        const DONT: u8 = 254;
         const IAC: u8 = 255;
 
+        #[allow(unused)]
+        enum TelnetCommands {
+            EOF = 236,
+            IP = 244,
+            WILL = 251,
+            WONT = 252,
+            DO = 253,
+            DONT = 254,
+            IAC = 255,
+        }
+
+        #[allow(unused)]
+        enum TelnetOptions {
+            BinaryTransmission = 0,
+            Echo = 1,
+            SuppressGoAhead = 3,
+            TimingMark = 6,
+            LineMode = 34,
+            SuppressLocalEcho = 45,
+        }
+        const BINARY_TRANSMISSION: u8 = 0;
+        const ECHO: u8 = 1;
+        const SUPPRESS_GO_AHEAD: u8 = 3;
+        const TIMING_MARK: u8 = 6;
+        const LINEMODE: u8 = 34;
+        const SUPPRESS_LOCAL_ECHO: u8 = 45;
+
         let socket = self.interface.get_socket::<TcpSocket>(self.telnet_handle);
+
+        #[allow(unused)]
+        macro_rules! do_option {
+            ($option:expr) => {
+                socket.send_slice(&[IAC, DO, $option]).ignore()
+            };
+        }
+
+        #[allow(unused)]
+        macro_rules! dont_option {
+            ($option:expr) => {
+                socket.send_slice(&[IAC, DONT, $option]).ignore()
+            };
+        }
+
+        #[allow(unused)]
+        macro_rules! will_option {
+            ($option:expr) => {
+                socket.send_slice(&[IAC, WILL, $option]).ignore()
+            };
+        }
+
+        #[allow(unused)]
+        macro_rules! wont_option {
+            ($option:expr) => {
+                socket.send_slice(&[IAC, WONT, $option]).ignore()
+            };
+        }
 
         if !socket.is_open() {
             socket.listen(TELNET_PORT).unwrap();
@@ -149,31 +217,62 @@ impl Resources {
                 .expect("receiving from telnet");
 
             let mut bytes = request.iter();
-            while bytes.as_ref().get(0) == Some(&IAC) {
+            let mut abort = false;
+            while bytes.as_ref().get(0) == Some(&IAC) && bytes.as_ref().get(1) != Some(&IAC) {
                 bytes.next();
                 match bytes.next() {
-                    Some(&DO | &WILL) => match bytes.next() {
-                        Some(option) => log::debug!("ignoring telnet option code: {option}"),
-                        None => log::debug!("ignoring malformed telnet DO/WILL command"),
+                    Some(&DO) => match bytes.next() {
+                        Some(&SUPPRESS_GO_AHEAD) => will_option!(SUPPRESS_GO_AHEAD),
+                        Some(&TIMING_MARK) => will_option!(TIMING_MARK),
+                        Some(option) => log::debug!("ignoring telnet DO: option {option}"),
+                        None => log::debug!("ignoring malformed telnet DO command"),
                     },
-                    Some(&EOF) => {
-                        socket.close();
-                        return;
-                    }
+                    Some(&WILL) => match bytes.next() {
+                        Some(&BINARY_TRANSMISSION | &ECHO | &LINEMODE | &SUPPRESS_LOCAL_ECHO) => {}
+                        Some(option) => log::debug!("ignoring telnet WILL: option {option}"),
+                        None => log::debug!("ignoring malformed telnet WILL command"),
+                    },
+                    Some(&WONT) => match bytes.next() {
+                        Some(&ECHO | &BINARY_TRANSMISSION) => {}
+                        Some(&SUPPRESS_LOCAL_ECHO) => {
+                            log::debug!("telnet client won't suppress local echo")
+                        }
+                        Some(option) => log::debug!("ignoring telnet WON'T: option {option}"),
+                        None => log::debug!("ignoring malformed telnet WON'T command"),
+                    },
+                    Some(&DONT) => match bytes.next() {
+                        Some(&ECHO) => {}
+                        Some(option) => log::debug!("ignoring telnet DON'T: option {option}"),
+                        None => log::debug!("ignoring malformed telnet DON'T command"),
+                    },
+                    Some(&EOF) => socket.close(),
+                    Some(&IP) => abort = true,
                     Some(code) => log::debug!("ignoring telnet command: {code}"),
                     None => log::debug!("ignoring malformed telnet command"),
                 }
             }
+            if abort {
+                self.interpreter.abort(socket);
+                self.prev_mode = self.interpreter.mode();
+                return;
+            }
 
-            let input = match str::from_utf8(bytes.as_slice()) {
-                Ok(text) => text,
-                Err(err) => {
-                    log::warn!("failed to parse telnet input ({bytes:?}): {err}");
-                    ""
+            self.interpreter.exec(bytes.as_slice(), socket);
+            let mode = self.interpreter.mode();
+            match (self.prev_mode, mode) {
+                (Command, Data) => {
+                    // do_option!(BINARY_TRANSMISSION);
+                    // will_option!(ECHO);
                 }
-            };
-
-            command::interpret(input, socket);
+                (Data, Command) => {
+                    // dont_option!(BINARY_TRANSMISSION);
+                    // wont_option!(ECHO);
+                }
+                _ => {}
+            }
+            self.prev_mode = mode;
+        } else if !socket.may_send() {
+            socket.close();
         }
     }
 }
