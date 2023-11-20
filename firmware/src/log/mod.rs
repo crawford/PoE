@@ -16,11 +16,15 @@
 pub mod itm;
 pub mod rtt;
 
+// use core::cell::Cell;
+
 static mut LOGGER: Logger = Logger {
     #[cfg(feature = "itm")]
+    // itm: Cell::new(None),
     itm: None,
 
     #[cfg(feature = "rtt")]
+    // rtt: Cell::new(None),
     rtt: None,
 };
 
@@ -36,9 +40,11 @@ pub fn init() -> &'static Logger {
 
 pub struct Logger {
     #[cfg(feature = "itm")]
+    // itm: Cell<Option<itm::Logger>>,
     itm: Option<itm::Logger>,
 
     #[cfg(feature = "rtt")]
+    // rtt: Cell<Option<rtt::Logger>>,
     rtt: Option<rtt::Logger>,
 }
 
@@ -46,6 +52,7 @@ impl Logger {
     #[cfg(feature = "itm")]
     pub fn add_itm(&self, logger: itm::Logger) -> &Self {
         log::set_max_level(log::max_level().max(logger.level));
+        // self.itm.set(Some(logger));
         unsafe { LOGGER.itm = Some(logger) };
         log::info!("ITM logging online!");
         self
@@ -54,6 +61,7 @@ impl Logger {
     #[cfg(feature = "rtt")]
     pub fn add_rtt(&self, logger: rtt::Logger) -> &Self {
         log::set_max_level(log::max_level().max(logger.level));
+        // self.rtt.set(Some(logger));
         unsafe { LOGGER.rtt = Some(logger) };
         log::info!("RTT logging online!");
         self

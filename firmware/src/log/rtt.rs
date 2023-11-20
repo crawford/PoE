@@ -15,10 +15,9 @@
 
 #![cfg(feature = "rtt")]
 
-use crate::command;
+use crate::command::Interpreter;
 
 use core::mem::MaybeUninit;
-use core::str;
 use rtt_target::{DownChannel, UpChannel};
 
 pub fn new(level: log::LevelFilter) -> Logger {
@@ -57,6 +56,7 @@ impl Logger {
         rtt_target::set_print_channel(channels.up.1);
         unsafe {
             TERMINAL = MaybeUninit::new(Terminal {
+                interpreter: Interpreter::new(),
                 input: channels.down.0,
                 output: channels.up.0,
             });
@@ -89,6 +89,8 @@ impl log::Log for Logger {
 static mut TERMINAL: MaybeUninit<Terminal> = MaybeUninit::uninit();
 
 pub struct Terminal {
+    interpreter: Interpreter,
+
     input: DownChannel,
     output: UpChannel,
 }
@@ -106,26 +108,18 @@ impl Terminal {
         terminal.input.read(&mut input);
 
         // Draw the prompt
-        command::interpret("", &mut terminal.output);
+        terminal.interpreter.exec(&[], &mut terminal.output);
 
         terminal
     }
 
     pub fn poll(&mut self) {
-        let mut input = [0u8; 1024];
+        let mut input = [0u8; 512];
         let len = self.input.read(&mut input);
         if len == 0 {
             return;
         }
 
-        let input = match str::from_utf8(&input[0..len]) {
-            Ok(text) => text,
-            Err(err) => {
-                log::warn!("failed to parse terminal input: {err}");
-                return;
-            }
-        };
-
-        command::interpret(input, &mut self.output)
+        self.interpreter.exec(&input[0..len], &mut self.output)
     }
 }

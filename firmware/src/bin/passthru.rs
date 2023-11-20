@@ -36,6 +36,7 @@ type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
     peripherals = true,
 )]
 mod app {
+    use poe::command::{Interpreter, InterpreterMode};
     use poe::efm32gg::{self, dma, EFM32GG};
     use poe::ksz8091::KSZ8091;
     use poe::network;
@@ -199,7 +200,7 @@ mod app {
             tcp_tx_payload: [u8; 128] = [0; 128],
             http_rx_payload: [u8; 128] = [0; 128],
             http_tx_payload: [u8; 1024] = [0; 1024],
-            telnet_rx_payload: [u8; 128] = [0; 128],
+            telnet_rx_payload: [u8; 512] = [0; 512],
             telnet_tx_payload: [u8; 512] = [0; 512],
 
             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
@@ -414,6 +415,10 @@ mod app {
 
                     #[cfg(feature = "telnet")]
                     telnet_handle,
+                    #[cfg(feature = "telnet")]
+                    interpreter: Interpreter::new(),
+                    #[cfg(feature = "telnet")]
+                    prev_mode: InterpreterMode::Command,
 
                     id_active: false,
                 },
@@ -602,5 +607,29 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         asm::bkpt();
     }
 
+    alex_count();
+    alex_identify();
+
     loop {}
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn alex_count() -> u32 {
+    static mut COUNT: u32 = 0;
+    unsafe {
+        COUNT = COUNT + 1;
+        COUNT
+    }
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn alex_identify() -> u32 {
+    use mono::State::*;
+
+    let (mut id, _) = unsafe { steal_leds() };
+    id.set(On);
+
+    0
 }
