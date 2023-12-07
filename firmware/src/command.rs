@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{fmt::Write, mem, ops::Range, str};
+use core::{arch::asm, fmt::Write, mem, ops::Range, str};
 use ignore_result::Ignore;
 use InterpreterMode::*;
 use InterpreterState::*;
@@ -51,9 +51,13 @@ Available commands:
   erase <hex address> <length>     Erase flash (address and length must be page-aligned)
   write <hex address> <length>     Write input to address
   call <hex address>               Call function at address
+  prog write <length>              Write input to program space
+  prog run                         Call function in program space
   help                             Display this help text";
 
 const PROMPT_STR: &str = "> ";
+
+static mut PROGRAM_SPACE: [u8; 512] = [0; 512];
 
 #[derive(Clone, Copy)]
 pub enum InterpreterMode {
@@ -134,6 +138,12 @@ where
                         break 'parse;
                     }
                 }
+            };
+        }
+
+        macro_rules! token_hex_isize {
+            ($name:literal) => {
+                token_hex_u32!($name) as isize
             };
         }
 
@@ -279,8 +289,6 @@ where
                 });
             }
             Some("call") => {
-                use core::arch::asm;
-
                 let addr = token_hex_u32!("addr");
                 let ret: u32;
                 unsafe {
@@ -292,6 +300,36 @@ where
                 }
                 outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
             }
+            Some("prog") => match tokens.next() {
+                Some("write") => {
+                    let length = token_hex_isize!("len");
+                    if length > 512 {
+                        outputln!(output, "Program write is limited to 512 bytes at a time");
+                        break 'parse;
+                    }
+                    let start = unsafe { PROGRAM_SPACE }.as_ptr();
+                    return Writing(Range {
+                        start: start as usize,
+                        end: start.wrapping_offset(length) as usize,
+                    });
+                }
+                Some("run") => {
+                    let addr = unsafe { PROGRAM_SPACE }.as_ptr() as usize | 0b1;
+                    let ret: u32;
+                    unsafe {
+                        asm!("blx {0}",
+                             "mov {1}, r0",
+                             in(reg) addr,
+                             out(reg) ret
+                        );
+                    }
+                    outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
+                }
+                Some(command) => {
+                    outputln!(output, "Unrecognized subcommand: {command} (try 'help')")
+                }
+                None => outputln!(output, "Unspecified subcommand (try 'help')"),
+            },
             Some(command) => outputln!(output, "Unrecognized command: {command} (try 'help')"),
         }
     }
