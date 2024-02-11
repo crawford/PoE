@@ -38,6 +38,7 @@ mod app {
 
     use core::pin::Pin;
     use cortex_m::{delay::Delay, interrupt};
+    use dwt_systick_monotonic::ExtU32;
     use efm32gg_hal::cmu::CMUExt;
     use efm32gg_hal::gpio::{EFM32Pin, GPIOExt};
     use embedded_hal::digital::v2::OutputPin;
@@ -51,9 +52,15 @@ mod app {
     #[monotonic(binds = SysTick, default = true)]
     type Monotonic = dwt_systick_monotonic::DwtSystick<50_000_000>; // 50 MHz
 
+    macro_rules! schedule {
+        ($name:ident, $duration:expr) => {
+            $name::spawn_after($duration).expect(concat!("scheduling ", stringify!($name)))
+        };
+    }
+
     #[shared]
     struct SharedResources {
-        led0: crate::LED0,
+        led0: ErrorLed,
         led1: crate::LED1,
         network: network::Resources,
         rtc: efm32gg11b820::RTC,
@@ -262,10 +269,13 @@ mod app {
         dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(60)));
         let dhcp_handle = interface.add_socket(dhcp_socket);
 
+        let mut led_err = ErrorLed::new(led0);
+        led_err.show(network::State::NoLink);
+
         let syst = delay.free();
         (
             SharedResources {
-                led0,
+                led0: led_err,
                 led1,
                 network: network::Resources {
                     interface,
@@ -300,18 +310,10 @@ mod app {
 
                 network.lock(|network| {
                     network.handle_sockets(
-                        |state| {
-                            led1.lock(|led| {
-                                led.set(match state {
-                                    network::State::Operational => Color::Black,
-                                    _ => Color::Red,
-                                })
-                                .ignore()
-                            })
-                        },
+                        |state| led0.lock(|led| led.show(state)),
                         |en| match en {
-                            false => led0.lock(|led| led.set(Color::Black).ignore()),
-                            true => led0.lock(|led| led.set(Color::Yellow).ignore()),
+                            false => led1.lock(|led| led.set(Color::Black).ignore()),
+                            true => led1.lock(|led| led.set(Color::Yellow).ignore()),
                         },
                     )
                 });
@@ -334,6 +336,74 @@ mod app {
         }
 
         log::trace!("Handled sockets: {}", timestamp);
+    }
+
+    pub struct ErrorLed {
+        spawn: Option<occult_network_led::SpawnHandle>,
+        led: crate::LED0,
+        state: rgb::Color,
+        network: network::State,
+        flashes: u8,
+    }
+
+    impl ErrorLed {
+        fn new(led: crate::LED0) -> ErrorLed {
+            ErrorLed {
+                spawn: None,
+                led,
+                state: rgb::Color::Red,
+                network: network::State::Uninit,
+                flashes: 0,
+            }
+        }
+
+        // This can race - link drops (NoLink) and then DHCP is handled (NoDhcp).
+        // Break this into two functions that check direction.
+        fn show(&mut self, state: network::State) {
+            self.network = state;
+            self.flashes = 0;
+
+            if let Some(handle) = self.spawn.take() {
+                handle.cancel().ignore();
+            }
+            occult_network_led::spawn().expect("spawning occult_network_led");
+        }
+    }
+
+    #[task(priority = 8, shared = [led0])]
+    fn occult_network_led(mut cx: occult_network_led::Context) {
+        use network::State::*;
+        use rgb::Color::*;
+
+        cx.shared.led0.lock(|net| {
+            let next = match (net.network, net.flashes) {
+                (Uninit, _) => Black,
+                (Operational, _) => Green,
+                (network, 0) => {
+                    net.flashes = match network {
+                        Uninit | Operational => 0,
+                        NoLink => 1,
+                        NoDhcp => 2,
+                        NoGateway => 3,
+                    };
+                    net.spawn = Some(schedule!(occult_network_led, 1000u32.millis()));
+                    Red
+                }
+                (_, flashes) => match net.state {
+                    Black => {
+                        net.flashes = flashes.saturating_sub(1);
+                        net.spawn = Some(schedule!(occult_network_led, 250u32.millis()));
+                        Red
+                    }
+                    _ => {
+                        net.spawn = Some(schedule!(occult_network_led, 250u32.millis()));
+                        Black
+                    }
+                },
+            };
+            net.state = next;
+            net.led.set(next).ignore()
+        });
     }
 
     #[task(binds = ETH, shared = [network])]
