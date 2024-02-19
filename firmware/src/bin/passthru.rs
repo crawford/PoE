@@ -21,6 +21,8 @@
 /// This firmware implements the following:
 /// - identify - Send a "0" or a "1" over TCP to the control port to disable or enable,
 ///              respectively, the flashing "Identify" LED.
+use core::arch::asm;
+use core::convert::TryFrom;
 use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
@@ -36,11 +38,14 @@ type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
     peripherals = true,
 )]
 mod app {
+    use crate::SystemCall;
     use poe::command::{Interpreter, InterpreterMode};
     use poe::efm32gg::{self, dma, EFM32GG};
     use poe::ksz8091::KSZ8091;
     use poe::network;
 
+    use core::arch::asm;
+    use core::convert::TryFrom;
     use core::pin::Pin;
     use cortex_m::{delay::Delay, interrupt};
     use dwt_systick_monotonic::ExtU32;
@@ -528,6 +533,65 @@ mod app {
         cx.local.terminal.poll();
         handle_terminal::spawn_after(100u32.millis()).expect("schedule handle_terminal");
     }
+
+    /// Handles the SVC instruction and services the system call.
+    ///
+    /// The return value is in r1 instead of r0. I'm not sure why, but the compiler is writing 0 to
+    /// r0 as one of the last things before returning.
+    #[task(binds = SVCall, shared = [network])]
+    fn system_call(mut cx: system_call::Context) {
+        use SystemCall::*;
+
+        let id: u32;
+        unsafe { asm!("mov {0}, r0", out(reg) id) }
+
+        match SystemCall::try_from(id) {
+            Ok(SocketIsOpen) => {
+                let open = cx.shared.network.lock(|network| {
+                    network
+                        .interface
+                        .get_socket::<TcpSocket>(network.tcp_handle)
+                        .is_open()
+                });
+                unsafe { asm!("mov r1, {0}", in(reg) open as u8) }
+            }
+            Err(()) => panic!("invalid syscall id"),
+        }
+    }
+}
+
+#[repr(u8)]
+enum SystemCall {
+    SocketIsOpen = 0,
+}
+
+impl TryFrom<u32> for SystemCall {
+    type Error = ();
+
+    fn try_from(id: u32) -> Result<Self, Self::Error> {
+        use SystemCall::*;
+
+        match id {
+            0 => Ok(SocketIsOpen),
+            _ => Err(()),
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn socket_is_open(handle: usize) -> bool {
+    let ret: u32;
+    unsafe {
+        asm!("mov r0, {0}",
+             "mov r1, {1}",
+             "svc 0",
+             "mov {2}, r1",
+             in(reg) SystemCall::SocketIsOpen as u8,
+             in(reg) handle,
+             out(reg) ret)
+    }
+
+    ret != 0
 }
 
 // Light up both LEDs, trigger a breakpoint, and loop
