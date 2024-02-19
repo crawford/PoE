@@ -91,10 +91,10 @@ mod app {
             telnet_tx_payload: [u8; 1024] = [0; 1024],
 
             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-            sockets: [SocketStorage<'static>; 4] = [SocketStorage::EMPTY; 4],
+            sockets: [SocketStorage<'static>; 8] = [SocketStorage::EMPTY; 8],
             ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
-            routes: [Option<(IpCidr, Route)>; 1] = [None; 1],
+            routes: [Option<(IpCidr, Route)>; 4] = [None; 4],
         ]
     )]
     fn init(mut cx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
