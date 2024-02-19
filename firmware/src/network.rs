@@ -328,8 +328,11 @@ impl Resources {
                 _ => {}
             }
             self.prev_mode = mode;
-        } else if !socket.may_send() {
-            socket.close();
+        // TODO: Why is this causing nmap to report that the socket is closed? Does this only happen
+        // with the SLSTK3701A?
+        // } else if !socket.may_send() {
+        //     log::error!("ALEX: can't send");
+        //     socket.close();
         }
     }
 }
