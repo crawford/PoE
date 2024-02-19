@@ -272,7 +272,9 @@ impl Resources {
             }
             self.prev_mode = mode;
         } else if !socket.may_send() {
-            socket.close();
+            // TODO: Why is this causing nmap to report that the socket is closed?
+            //       Does this only happen with the SLSTK3701A?
+            // socket.close();
         }
     }
 }
