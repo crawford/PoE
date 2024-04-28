@@ -71,6 +71,9 @@ mod app {
     #[local]
     struct LocalResources {
         spawn_handle: Option<handle_network::SpawnHandle>,
+
+        #[cfg(feature = "rtt")]
+        terminal: &'static mut poe::log::rtt::Terminal,
     }
 
     #[init(
@@ -285,6 +288,9 @@ mod app {
         let mut led_err = ErrorLed::new(led0);
         led_err.show(network::State::NoLink);
 
+        #[cfg(feature = "rtt")]
+        handle_terminal::spawn().expect("spawn handle_terminal");
+
         let syst = delay.free();
         (
             SharedResources {
@@ -305,7 +311,12 @@ mod app {
                 },
                 rtc: cx.device.RTC,
             },
-            LocalResources { spawn_handle: None },
+            LocalResources {
+                spawn_handle: None,
+
+                #[cfg(feature = "rtt")]
+                terminal: poe::log::rtt::Terminal::new(),
+            },
             init::Monotonics(Monotonic::new(
                 &mut cx.core.DCB,
                 cx.core.DWT,
@@ -452,6 +463,13 @@ mod app {
 
         // TODO: Why is the one-second delay necessary? 100 ms doesn't work.
         handle_network::spawn_after(1000u32.millis()).ignore()
+    }
+
+    #[cfg(feature = "rtt")]
+    #[task(local = [terminal])]
+    fn handle_terminal(cx: handle_terminal::Context) {
+        cx.local.terminal.poll();
+        handle_terminal::spawn_after(100u32.millis()).expect("schedule handle_terminal");
     }
 }
 
