@@ -101,6 +101,7 @@ impl Terminal {
             cortex_m::singleton!(: bool = false).is_some(),
             "terminal already initialized"
         );
+        // TODO: check that logger has been initialized
         let terminal = unsafe { TERMINAL.assume_init_mut() };
 
         // Clear the buffer
