@@ -32,6 +32,7 @@ type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH
     peripherals = true,
 )]
 mod app {
+    #[cfg(feature = "telnet")]
     use poe::command::{Interpreter, InterpreterMode};
     use poe::efm32gg::{self, dma};
     use poe::ksz8091::KSZ8091;

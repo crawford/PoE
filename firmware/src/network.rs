@@ -18,6 +18,7 @@ use crate::command::{Interpreter, InterpreterMode};
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
 
+#[cfg(feature = "telnet")]
 use ignore_result::Ignore;
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{Dhcpv4Event, Dhcpv4Socket, TcpSocket};
