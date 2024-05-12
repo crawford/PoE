@@ -215,6 +215,11 @@ mod app {
         let gpio = cx.device.GPIO;
         let rtc = cx.device.RTC;
 
+        // Initialize logging
+        let logger = poe::log::init();
+        #[cfg(feature = "rtt")]
+        logger.add_rtt(poe::log::rtt::new(Debug));
+
         // Switch to Power Configuration 1 (section 9.3.4.2) - power the digital LDO from DVDD
         emu.pwrctrl.write(|reg| reg.regpwrsel().set_bit());
 
@@ -228,10 +233,7 @@ mod app {
         // Enable the GPIO peripheral
         cmu.hfbusclken0.write(|reg| reg.gpio().set_bit());
 
-        // Initialize logging
-        let logger = poe::log::init();
-        #[cfg(feature = "rtt")]
-        logger.add_rtt(poe::log::rtt::new(Debug));
+        // Now that the GPIOs have been configured, enable ITM logging
         #[cfg(feature = "itm")]
         logger.add_itm(poe::log::itm::new(Info, &cmu, &gpio, cx.core.ITM));
 
