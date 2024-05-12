@@ -82,6 +82,11 @@ mod app {
         ]
     )]
     fn init(mut cx: init::Context) -> (SharedResources, LocalResources, init::Monotonics) {
+        // Initialize logging
+        let logger = poe::log::init();
+        #[cfg(feature = "rtt")]
+        logger.add_rtt(poe::log::rtt::new(log::LevelFilter::Debug));
+
         // Enable the HFXO
         cx.device.CMU.oscencmd.write(|reg| reg.hfxoen().set_bit());
         // Wait for HFX0 to stabilize
@@ -113,10 +118,7 @@ mod app {
             reg
         });
 
-        // Initialize logging
-        let logger = poe::log::init();
-        #[cfg(feature = "rtt")]
-        logger.add_rtt(poe::log::rtt::new(log::LevelFilter::Debug));
+        // Now that the GPIOs have been configured, enable ITM logging
         #[cfg(feature = "itm")]
         logger.add_itm(poe::log::itm::new(
             log::LevelFilter::Info,
