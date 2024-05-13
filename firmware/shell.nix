@@ -1,5 +1,5 @@
 let
-  rev = "7c1e8b1dd6ed0043fb4ee0b12b815256b0b9de6f";
+  rev = "78e723925daf5c9e8d0a1837ec27059e61649cb6";
 in
 with import <nixpkgs> {
   overlays = [ (import (builtins.fetchTarball "https://github.com/mozilla/nixpkgs-mozilla/archive/${rev}.tar.gz")) ];
