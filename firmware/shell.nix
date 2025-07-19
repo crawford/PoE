@@ -8,7 +8,7 @@ with import <nixpkgs> {
 let
   rust = (rustChannelOf { channel = "1.76.0"; }).rust.override {
     targets = [ "thumbv7m-none-eabi" ];
-    extensions = [ "rust-src" ];
+    extensions = [ "rust-src" "rust-analyzer-preview" ];
   };
 in
 mkShell {
