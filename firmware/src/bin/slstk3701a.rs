@@ -17,12 +17,11 @@
 #![no_std]
 
 /// Sandbox for development on the SLSTK3701A dev board
-use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use ignore_result::Ignore;
 use led::rgb::{self, Color};
-use smoltcp::time::Instant;
+use poe::fault;
 
 type LED0 = rgb::CommonAnodeLED<pins::PH10<Output>, pins::PH11<Output>, pins::PH12<Output>, ()>;
 type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH15<Output>, ()>;
@@ -365,49 +364,12 @@ mod app {
     }
 }
 
-// Light up both LEDs red, trigger a breakpoint, and loop
-#[cortex_m_rt::exception]
-fn DefaultHandler(irqn: i16) {
-    interrupt::disable();
-
-    log::error!("Default Handler: irq {}", irqn);
-    let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(Color::Red).ignore();
-    led1.set(Color::Red).ignore();
-
-    if peripheral::DCB::is_debugger_attached() {
-        asm::bkpt();
-    }
-
-    loop {
-        asm::wfe();
-    }
-}
-
-// Light up both LEDs red, trigger a breakpoint, and loop
-#[cortex_m_rt::exception]
-fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
-    interrupt::disable();
-
-    let (mut led0, mut led1) = unsafe { steal_leds() };
-    led0.set(Color::Red).ignore();
-    led1.set(Color::Red).ignore();
-
-    if peripheral::DCB::is_debugger_attached() {
-        asm::bkpt();
-    }
-
-    loop {
-        asm::wfe();
-    }
-}
-
 /// Steals the LEDs so they may be used directly.
 ///
 /// # Safety
 ///
 /// This overrides any existing configuration.
-pub unsafe fn steal_leds() -> (LED0, LED1) {
+unsafe fn steal_leds() -> (LED0, LED1) {
     let periph = efm32gg11b820::Peripherals::steal();
     let gpio = periph.GPIO.split(periph.CMU.constrain().split().gpio);
 
@@ -425,19 +387,30 @@ pub unsafe fn steal_leds() -> (LED0, LED1) {
     (led0, led1)
 }
 
+#[cortex_m_rt::exception]
+fn DefaultHandler(irqn: i16) -> ! {
+    fault::handle_default(irqn, |_irqn| {
+        let (mut led0, mut led1) = unsafe { steal_leds() };
+        led0.set(Color::Red).ignore();
+        led1.set(Color::Red).ignore();
+    })
+}
+
+// Light up both LEDs red, trigger a breakpoint, and loop
+#[cortex_m_rt::exception]
+fn HardFault(frame: &cortex_m_rt::ExceptionFrame) -> ! {
+    fault::handle_hardfault(frame, |_frame| {
+        let (mut led0, mut led1) = unsafe { steal_leds() };
+        led0.set(Color::Red).ignore();
+        led1.set(Color::Red).ignore();
+    })
+}
+
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
-
-    cortex_m::interrupt::disable();
-
-    let now = Instant::from_millis(rtc.cnt.read().cnt().bits());
-
-    log::error!("Panic at {}: {}", now, info);
-
-    if cortex_m::peripheral::DCB::is_debugger_attached() {
-        asm::bkpt();
-    }
-
-    loop {}
+    fault::handle_panic(info, |_info| {
+        let (mut led0, mut led1) = unsafe { steal_leds() };
+        led0.set(Color::Yellow).ignore();
+        led1.set(Color::Yellow).ignore();
+    })
 }

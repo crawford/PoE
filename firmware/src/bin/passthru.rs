@@ -21,11 +21,10 @@
 /// This firmware implements the following:
 /// - identify - Send a "0" or a "1" over TCP to the control port to disable or enable,
 ///              respectively, the flashing "Identify" LED.
-use cortex_m::{asm, interrupt, peripheral};
 use efm32gg_hal::cmu::CMUExt;
 use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use led::mono::{self, CommonAnodeLED};
-use smoltcp::time::Instant;
+use poe::fault;
 
 type IdentifyLed = CommonAnodeLED<pins::PE4<Output>>;
 type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
@@ -509,54 +508,12 @@ mod app {
     }
 }
 
-// Light up both LEDs, trigger a breakpoint, and loop
-#[cortex_m_rt::exception]
-fn DefaultHandler(irqn: i16) {
-    use mono::State::*;
-
-    interrupt::disable();
-
-    log::error!("Default Handler: irq {}", irqn);
-    let (mut id, mut net) = unsafe { steal_leds() };
-    id.set(On);
-    net.set(On);
-
-    if peripheral::DCB::is_debugger_attached() {
-        asm::bkpt();
-    }
-
-    loop {
-        asm::wfe();
-    }
-}
-
-// Light up both LEDs, trigger a breakpoint, and loop
-#[cortex_m_rt::exception]
-fn HardFault(frame: &cortex_m_rt::ExceptionFrame) -> ! {
-    use mono::State::*;
-
-    interrupt::disable();
-
-    log::error!("Hard Fault: {:?}", frame);
-    let (mut id, mut net) = unsafe { steal_leds() };
-    id.set(On);
-    net.set(On);
-
-    if peripheral::DCB::is_debugger_attached() {
-        asm::bkpt();
-    }
-
-    loop {
-        asm::wfe();
-    }
-}
-
 /// Steals the LEDs so they may be used directly.
 ///
 /// # Safety
 ///
 /// This overrides any existing configuration.
-pub unsafe fn steal_leds() -> (IdentifyLed, NetworkLed) {
+unsafe fn steal_leds() -> (IdentifyLed, NetworkLed) {
     let periph = efm32gg11b820::Peripherals::steal();
     let gpio = periph.GPIO.split(periph.CMU.constrain().split().gpio);
 
@@ -566,25 +523,37 @@ pub unsafe fn steal_leds() -> (IdentifyLed, NetworkLed) {
     (id, net)
 }
 
+// Light up both LEDs, trigger a breakpoint, and loop
+#[cortex_m_rt::exception]
+fn DefaultHandler(irqn: i16) {
+    use mono::State::*;
+
+    fault::handle_default(irqn, |_irqn| {
+        let (mut id, mut net) = unsafe { steal_leds() };
+        id.set(On);
+        net.set(On);
+    })
+}
+
+// Light up both LEDs, trigger a breakpoint, and loop
+#[cortex_m_rt::exception]
+fn HardFault(frame: &cortex_m_rt::ExceptionFrame) -> ! {
+    use mono::State::*;
+
+    fault::handle_hardfault(frame, |_frame| {
+        let (mut id, mut net) = unsafe { steal_leds() };
+        id.set(On);
+        net.set(On);
+    })
+}
+
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     use mono::State::*;
 
-    cortex_m::interrupt::disable();
-
-    let rtc = unsafe { &*efm32gg11b820::RTC::ptr() };
-    let now = Instant::from_millis(rtc.cnt.read().cnt().bits());
-
-    log::error!("Panic at {}", now);
-    log::error!("{}", info);
-
-    let (mut id, mut net) = unsafe { steal_leds() };
-    id.set(On);
-    net.set(On);
-
-    if cortex_m::peripheral::DCB::is_debugger_attached() {
-        asm::bkpt();
-    }
-
-    loop {}
+    fault::handle_panic(info, |_info| {
+        let (mut id, mut net) = unsafe { steal_leds() };
+        id.set(On);
+        net.set(On);
+    })
 }
