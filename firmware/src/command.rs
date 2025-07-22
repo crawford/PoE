@@ -39,6 +39,10 @@ macro_rules! outputln {
         output!($w, $arg);
         outputln!($w)
     }};
+    ($w:expr, $fmt:literal $(, $( $args:expr ),+ )?) => {{
+        output!($w, $fmt $(, $( $args ),+ )?);
+        outputln!($w)
+    }};
 }
 
 const HELP_STR: &str = "Command Interpreter
@@ -51,6 +55,7 @@ Available commands:
   erase <hex address> <length>     Erase flash (address and length must be page-aligned)
   write <hex address> <length>     Write input to address
   call <hex address>               Call function at address
+  prog addr                        Display the start address of program space
   prog write <length>              Write input to program space
   prog run                         Call function in program space
   help                             Display this help text";
@@ -301,6 +306,7 @@ where
                 outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
             }
             Some("prog") => match tokens.next() {
+                Some("addr") => outputln!(output, "{:p}", unsafe { PROGRAM_SPACE }.as_ptr()),
                 Some("write") => {
                     let length = token_hex_isize!("len");
                     if length > 512 {
