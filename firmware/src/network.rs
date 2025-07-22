@@ -219,7 +219,7 @@ impl Resources {
 
             let mut bytes = request.iter();
             let mut abort = false;
-            while bytes.as_ref().get(0) == Some(&IAC) && bytes.as_ref().get(1) != Some(&IAC) {
+            while bytes.as_ref().first() == Some(&IAC) && bytes.as_ref().get(1) != Some(&IAC) {
                 bytes.next();
                 match bytes.next() {
                     Some(&DO) => match bytes.next() {
