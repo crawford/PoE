@@ -372,8 +372,8 @@ fn write_data<W: Write>(input: &[u8], region: &Range<usize>, output: &mut W) -> 
         return Writing(region.clone());
     }
 
-    let input = input.strip_suffix(&[b'\r']).unwrap_or(input);
-    let input = input.strip_suffix(&[b'\n']).unwrap_or(input);
+    let input = input.strip_suffix(b"\r").unwrap_or(input);
+    let input = input.strip_suffix(b"\n").unwrap_or(input);
     let input_len = input.len();
     let expected_len = region.len() * HEX_LEN;
 
