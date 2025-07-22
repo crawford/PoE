@@ -211,24 +211,6 @@ mod app {
         led0.set(Color::Black).ignore();
         led1.set(Color::Black).ignore();
 
-        #[cfg(feature = "logging")]
-        {
-            use cortex_m_log::destination::Itm;
-            use cortex_m_log::printer::itm::InterruptSync;
-
-            let logger = Logger {
-                inner: InterruptSync::new(Itm::new(cx.core.ITM)),
-                level: log::LevelFilter::Info,
-            };
-
-            unsafe {
-                LOGGER = core::mem::MaybeUninit::new(logger);
-                cortex_m_log::log::trick_init(LOGGER.assume_init_ref()).unwrap();
-            }
-
-            log::info!("Logger online!");
-        };
-
         // Power up the PHY module
         gpio.pi10.as_output().set_high().ignore();
 
