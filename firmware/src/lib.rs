@@ -15,6 +15,7 @@
 
 #![no_std]
 
+pub mod command;
 pub mod efm32gg;
 pub mod fault;
 pub mod ksz8091;

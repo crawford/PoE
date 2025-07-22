@@ -27,7 +27,8 @@ lto = true
 opt-level = "s"
 
 [features]
-default = [ "itm", "rtt" ]
+default = [ "itm", "rtt", "telnet" ]
 itm = [ "cortex-m-log/log-integration", "cortex-m-log/itm", "smoltcp/log" ]
 rtt = [ "rtt-target", "smoltcp/log" ]
 silent = [ "log/max_level_off" ]
+telnet = []

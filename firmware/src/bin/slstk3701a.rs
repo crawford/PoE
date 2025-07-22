@@ -32,6 +32,7 @@ type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH
     peripherals = true,
 )]
 mod app {
+    use poe::command::{Interpreter, InterpreterMode};
     use poe::efm32gg::{self, dma};
     use poe::ksz8091::KSZ8091;
     use poe::network;
@@ -73,16 +74,21 @@ mod app {
 
     #[init(
         local = [
-             eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
-             eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
-             eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
-             eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
-             tcp_rx_payload: [u8; 1024] = [0; 1024],
-             tcp_tx_payload: [u8; 1024] = [0; 1024],
+            eth_rx_region: dma::RxRegion = dma::RxRegion([0; 1536]),
+            eth_tx_region: dma::TxRegion = dma::TxRegion([0; 1536]),
+            eth_rx_descriptors: dma::RxDescriptors = dma::RxDescriptors::new(),
+            eth_tx_descriptors: dma::TxDescriptors = dma::TxDescriptors::new(),
+            tcp_rx_payload: [u8; 1024] = [0; 1024],
+            tcp_tx_payload: [u8; 1024] = [0; 1024],
 
-             neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
-             sockets: [SocketStorage<'static>; 2] = [SocketStorage::EMPTY; 2],
-             ip_addresses: [IpCidr; 1] =
+            #[cfg(feature = "telnet")]
+            telnet_rx_payload: [u8; 1024] = [0; 1024],
+            #[cfg(feature = "telnet")]
+            telnet_tx_payload: [u8; 1024] = [0; 1024],
+
+            neighbors: [Option<(IpAddress, Neighbor)>; 8] = [None; 8],
+            sockets: [SocketStorage<'static>; 4] = [SocketStorage::EMPTY; 4],
+            ip_addresses: [IpCidr; 1] =
                 [IpCidr::Ipv4(Ipv4Cidr::new(Ipv4Address::UNSPECIFIED, 0))],
             routes: [Option<(IpCidr, Route)>; 1] = [None; 1],
         ]
@@ -264,6 +270,12 @@ mod app {
             TcpSocketBuffer::new(cx.local.tcp_tx_payload.as_mut()),
         ));
 
+        #[cfg(feature = "telnet")]
+        let telnet_handle = interface.add_socket(TcpSocket::new(
+            TcpSocketBuffer::new(cx.local.telnet_rx_payload.as_mut()),
+            TcpSocketBuffer::new(cx.local.telnet_tx_payload.as_mut()),
+        ));
+
         let mut dhcp_socket = Dhcpv4Socket::new();
         // XXX: just for testing
         dhcp_socket.set_max_lease_duration(Some(Duration::from_secs(60)));
@@ -281,6 +293,14 @@ mod app {
                     interface,
                     tcp_handle,
                     dhcp_handle,
+
+                    #[cfg(feature = "telnet")]
+                    telnet_handle,
+
+                    #[cfg(feature = "telnet")]
+                    interpreter: Interpreter::new(),
+                    #[cfg(feature = "telnet")]
+                    prev_mode: InterpreterMode::Command,
                 },
                 rtc: cx.device.RTC,
             },
