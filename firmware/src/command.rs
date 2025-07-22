@@ -13,7 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{arch::asm, fmt::Write, mem, ops::Range, str};
+use core::arch::asm;
+use core::cell::UnsafeCell;
+use core::fmt::Write;
+use core::ops::Range;
+use core::{mem, str};
 use ignore_result::Ignore;
 use InterpreterMode::*;
 use InterpreterState::*;
@@ -62,7 +66,22 @@ Available commands:
 
 const PROMPT_STR: &str = "> ";
 
-static mut PROGRAM_SPACE: [u8; 512] = [0; 512];
+#[repr(transparent)]
+pub struct ProgramSpace<const SIZE: usize>(UnsafeCell<[u8; SIZE]>);
+
+unsafe impl<const SIZE: usize> Sync for ProgramSpace<SIZE> {}
+
+impl<const SIZE: usize> ProgramSpace<SIZE> {
+    const fn new() -> Self {
+        ProgramSpace(UnsafeCell::new([0; SIZE]))
+    }
+
+    fn as_ptr(&self) -> *const [u8; SIZE] {
+        self.0.get()
+    }
+}
+
+static PROGRAM_SPACE: ProgramSpace<512> = ProgramSpace::new();
 
 #[derive(Clone, Copy)]
 pub enum InterpreterMode {
@@ -306,21 +325,21 @@ where
                 outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
             }
             Some("prog") => match tokens.next() {
-                Some("addr") => outputln!(output, "{:p}", unsafe { PROGRAM_SPACE }.as_ptr()),
+                Some("addr") => outputln!(output, "{:p}", PROGRAM_SPACE.as_ptr()),
                 Some("write") => {
                     let length = token_hex_isize!("len");
                     if length > 512 {
                         outputln!(output, "Program write is limited to 512 bytes at a time");
                         break 'parse;
                     }
-                    let start = unsafe { PROGRAM_SPACE }.as_ptr();
+                    let start = PROGRAM_SPACE.as_ptr();
                     return Writing(Range {
                         start: start as usize,
                         end: start.wrapping_offset(length) as usize,
                     });
                 }
                 Some("run") => {
-                    let addr = unsafe { PROGRAM_SPACE }.as_ptr() as usize | 0b1;
+                    let addr = PROGRAM_SPACE.as_ptr() as usize | 0b1;
                     let ret: u32;
                     unsafe {
                         asm!("blx {0}",
