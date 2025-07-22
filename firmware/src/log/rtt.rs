@@ -17,6 +17,7 @@
 
 use crate::command::Interpreter;
 
+use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use rtt_target::{DownChannel, UpChannel};
 
@@ -55,7 +56,7 @@ impl Logger {
 
         rtt_target::set_print_channel(channels.up.1);
         unsafe {
-            TERMINAL = MaybeUninit::new(Terminal {
+            *TERMINAL.0.get() = MaybeUninit::new(Terminal {
                 interpreter: Interpreter::new(),
                 input: channels.down.0,
                 output: channels.up.0,
@@ -86,7 +87,12 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
-static mut TERMINAL: MaybeUninit<Terminal> = MaybeUninit::uninit();
+#[repr(transparent)]
+struct GlobalTerminal(UnsafeCell<MaybeUninit<Terminal>>);
+
+unsafe impl Sync for GlobalTerminal {}
+
+static TERMINAL: GlobalTerminal = GlobalTerminal(UnsafeCell::new(MaybeUninit::uninit()));
 
 pub struct Terminal {
     interpreter: Interpreter,
@@ -102,7 +108,7 @@ impl Terminal {
             "terminal already initialized"
         );
         // TODO: check that logger has been initialized
-        let terminal = unsafe { TERMINAL.assume_init_mut() };
+        let terminal = unsafe { (&mut *TERMINAL.0.get()).assume_init_mut() };
 
         // Clear the buffer
         let mut input = [0u8; 1024];
