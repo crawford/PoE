@@ -71,7 +71,7 @@ fn print_fault_status_registers() {
 
     macro_rules! if_not_set {
         ($reg:expr, $bit:expr, $expr:expr) => {
-            if $reg & (1 << $bit) != 0 {
+            if $reg & (1 << $bit) == 0 {
                 $expr
             }
         };
