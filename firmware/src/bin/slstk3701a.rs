@@ -455,6 +455,11 @@ mod app {
     }
 }
 
+#[cortex_m_rt::exception]
+fn SVCall() {
+    poe::api::invoke!();
+}
+
 /// Steals the LEDs so they may be used directly.
 ///
 /// # Safety
