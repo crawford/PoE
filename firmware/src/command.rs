@@ -165,12 +165,6 @@ where
             };
         }
 
-        macro_rules! token_hex_isize {
-            ($name:literal) => {
-                token_hex_u32!($name) as isize
-            };
-        }
-
         macro_rules! token_hex_usize {
             ($name:literal) => {
                 token_hex_u32!($name) as usize
@@ -327,7 +321,7 @@ where
             Some("prog") => match tokens.next() {
                 Some("addr") => outputln!(output, "{:p}", PROGRAM_SPACE.as_ptr()),
                 Some("write") => {
-                    let length = token_hex_isize!("len");
+                    let length = token_hex_usize!("len");
                     if length > 512 {
                         outputln!(output, "Program write is limited to 512 bytes at a time");
                         break 'parse;
@@ -335,7 +329,7 @@ where
                     let start = PROGRAM_SPACE.as_ptr();
                     return Writing(Range {
                         start: start as usize,
-                        end: start.wrapping_offset(length) as usize,
+                        end: start as usize + length,
                     });
                 }
                 Some("run") => {
