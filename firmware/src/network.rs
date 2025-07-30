@@ -209,7 +209,7 @@ impl Resources {
         }
 
         if socket.can_recv() && socket.can_send() {
-            let mut data = [0; 128];
+            let mut data = [0; 512];
             let request = socket
                 .recv(|b| {
                     data[..b.len()].copy_from_slice(b);
