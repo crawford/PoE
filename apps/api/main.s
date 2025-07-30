@@ -17,6 +17,14 @@ _start:
 
 	bx lr
 
-	bkpt
 handler:
+	movw r0, #0x6986
+	movt r0, #0x0A06
+	ldr  r1, =message
+	svc  0
+
 	bx lr
+
+	.section .rodata
+message:
+	.asciz "Hello, world!"

@@ -15,7 +15,7 @@
 
 use core::cell::UnsafeCell;
 use core::convert::TryFrom;
-use core::{fmt, mem};
+use core::{ffi, fmt, mem};
 
 #[repr(u32)]
 #[non_exhaustive]
@@ -33,12 +33,14 @@ pub type Handler = extern "C" fn();
 pub const OPEN_SOCKET: u32 = Procedure::OpenSocket as u32;
 pub const REGISTER_HANDLER: u32 = Procedure::RegisterHandler as u32;
 pub const TRIGGER_EVENT: u32 = Procedure::TriggerEvent as u32;
+pub const PRINT_STRING: u32 = Procedure::PrintString as u32;
 
 #[repr(u32)]
 enum Procedure {
     OpenSocket = 0x8BD6C7FF,
     RegisterHandler = 0xD35DBF5A,
     TriggerEvent = 0x65438A43,
+    PrintString = 0x0A066986,
 }
 
 impl TryFrom<u32> for Procedure {
@@ -49,6 +51,7 @@ impl TryFrom<u32> for Procedure {
             OPEN_SOCKET => Ok(Procedure::OpenSocket),
             REGISTER_HANDLER => Ok(Procedure::RegisterHandler),
             TRIGGER_EVENT => Ok(Procedure::TriggerEvent),
+            PRINT_STRING => Ok(Procedure::PrintString),
             _ => Err(()),
         }
     }
@@ -67,6 +70,9 @@ enum Args {
     },
     TriggerEvent {
         id: u32,
+    },
+    PrintString {
+        str: *const ffi::c_char,
     },
 }
 
@@ -187,6 +193,12 @@ pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u3
                 handler()
             });
         }
+        (Procedure::PrintString, Args::PrintString { str }) => {
+            match unsafe { ffi::CStr::from_ptr(str) }.to_str() {
+                Ok(str) => log::info!("{str}"),
+                Err(err) => log::warn!("PrintString failed: {err:?}"),
+            }
+        }
         _ => panic!("malformed API call"),
     }
 }
@@ -221,6 +233,13 @@ fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<C
             let id: u32 = arg0;
 
             Args::TriggerEvent { id }
+        }
+        Procedure::PrintString => {
+            let str: u32 = arg0;
+
+            Args::PrintString {
+                str: str as *const ffi::c_char,
+            }
         }
     };
 
