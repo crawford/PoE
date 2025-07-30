@@ -32,11 +32,13 @@ pub type Handler = extern "C" fn();
 
 pub const OPEN_SOCKET: u32 = Procedure::OpenSocket as u32;
 pub const REGISTER_HANDLER: u32 = Procedure::RegisterHandler as u32;
+pub const TRIGGER_EVENT: u32 = Procedure::TriggerEvent as u32;
 
 #[repr(u32)]
 enum Procedure {
     OpenSocket = 0x8BD6C7FF,
     RegisterHandler = 0xD35DBF5A,
+    TriggerEvent = 0x65438A43,
 }
 
 impl TryFrom<u32> for Procedure {
@@ -46,6 +48,7 @@ impl TryFrom<u32> for Procedure {
         match id {
             OPEN_SOCKET => Ok(Procedure::OpenSocket),
             REGISTER_HANDLER => Ok(Procedure::RegisterHandler),
+            TRIGGER_EVENT => Ok(Procedure::TriggerEvent),
             _ => Err(()),
         }
     }
@@ -61,6 +64,9 @@ enum Args {
     RegisterHandler {
         event_id: u32,
         handler: Handler,
+    },
+    TriggerEvent {
+        id: u32,
     },
 }
 
@@ -174,6 +180,13 @@ pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u3
                 }
             }
         }
+        (Procedure::TriggerEvent, Args::TriggerEvent { id }) => {
+            log::info!("TriggerEvent({id})");
+            STORE.find_all(id).for_each(|handler| {
+                log::debug!("Calling: {handler:p}");
+                handler()
+            });
+        }
         _ => panic!("malformed API call"),
     }
 }
@@ -203,6 +216,11 @@ fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<C
                 event_id: id,
                 handler: unsafe { core::mem::transmute(func) },
             }
+        }
+        Procedure::TriggerEvent => {
+            let id: u32 = arg0;
+
+            Args::TriggerEvent { id }
         }
     };
 
