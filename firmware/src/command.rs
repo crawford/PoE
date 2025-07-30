@@ -66,7 +66,7 @@ Available commands:
 
 const PROMPT_STR: &str = "> ";
 
-#[repr(transparent)]
+#[repr(align(4))]
 pub struct ProgramSpace<const SIZE: usize>(UnsafeCell<[u8; SIZE]>);
 
 unsafe impl<const SIZE: usize> Sync for ProgramSpace<SIZE> {}
