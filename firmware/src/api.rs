@@ -178,7 +178,7 @@ pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u3
         (Procedure::RegisterHandler, Args::RegisterHandler { event_id, handler }) => {
             match STORE.next_free() {
                 Some(entry) => {
-                    log::debug!("RegisterHandler({event_id}, {handler:p}) @ {entry:p}");
+                    log::debug!("RegisterHandler({event_id:#06x}, {handler:p}) @ {entry:p}");
                     let _ = entry.set(event_id, handler);
                 }
                 None => {
