@@ -39,43 +39,81 @@ pub fn handle_hardfault(frame: &ExceptionFrame, init: impl FnOnce(&ExceptionFram
     print_registers(frame);
     print_fault_status_registers();
     print_hint(frame);
-
+    log::error!("******************");
     unsafe { end() }
 }
 
+#[repr(u8)]
+enum HFSR {
+    VectTbl = 1,
+    Forced = 30,
+    DebugEvt = 31,
+}
+
+#[repr(u8)]
+enum CFSR {
+    // MMFSR
+    IAccViol = 0,
+    DAccViol = 1,
+    //
+    MUnstkErr = 3,
+    MStkErr = 4,
+    MLSPErr = 5,
+    //
+    MMARValid = 7,
+
+    // BFSR
+    IBusErr = 8,
+    PrecisErr = 9,
+    ImprecisErr = 10,
+    UnstkErr = 11,
+    StkErr = 12,
+    LSPErr = 13,
+    //
+    BFARValid = 15,
+
+    // UFSR
+    UndefinStr = 16,
+    InvState = 17,
+    InvPC = 18,
+    NoCP = 19,
+    StkOf = 20,
+    //
+    Unaligned = 24,
+    DivByZero = 25,
+}
+
 fn print_registers(frame: &ExceptionFrame) {
+    use cortex_m::register::{msp, psp};
     use log::warn;
 
     warn!("Registers:");
-    warn!(" r0   = {:#010X}", frame.r0);
-    warn!(" r1   = {:#010X}", frame.r1);
-    warn!(" r2   = {:#010X}", frame.r2);
-    warn!(" r3   = {:#010X}", frame.r3);
-    warn!(" r12  = {:#010X}", frame.r12);
-    warn!(" lr   = {:#010X}", frame.lr);
-    warn!(" pc   = {:#010X}", frame.pc);
-    warn!(" xpsr = {:#010X}", frame.xpsr);
+    warn!(" r0   = {:#010x}", frame.r0);
+    warn!(" r1   = {:#010x}", frame.r1);
+    warn!(" r2   = {:#010x}", frame.r2);
+    warn!(" r3   = {:#010x}", frame.r3);
+    warn!(" r12  = {:#010x}", frame.r12);
+    warn!(" lr   = {:#010x}", frame.lr);
+    warn!(" pc   = {:#010x}", frame.pc);
+    warn!(" xpsr = {:#010x}", frame.xpsr);
+    warn!(" sp   = {:#010x}", frame as *const ExceptionFrame as u32);
+    warn!(" msp  = {:#010x}", msp::read());
+    warn!(" psp  = {:#010x}", psp::read());
     warn!("");
 }
 
 fn print_fault_status_registers() {
-    use log::warn;
-
-    macro_rules! if_set {
-        ($reg:expr, $bit:expr, $expr:expr) => {
-            if $reg & (1 << $bit) != 0 {
-                $expr
+    macro_rules! ifs {
+        ($reg:expr, $bit:path, $fmt:literal $( , $args:tt )*) => {
+            if $reg & (1 << $bit as u8) != 0 {
+                warn!(concat!("  ", $fmt), $( $args )*)
             }
         };
     }
 
-    macro_rules! if_not_set {
-        ($reg:expr, $bit:expr, $expr:expr) => {
-            if $reg & (1 << $bit) == 0 {
-                $expr
-            }
-        };
-    }
+    use log::{info, warn};
+    use CFSR::*;
+    use HFSR::*;
 
     let scb = unsafe { &*SCB::ptr() };
 
@@ -85,57 +123,72 @@ fn print_fault_status_registers() {
     let bfar = scb.bfar.read();
 
     warn!("Fault Status Registers:");
-    warn!(" HFSR = {:#010X}", hfsr);
-    if_set!(hfsr, 1, warn!(" - busfault on vector table read"));
-    if_set!(hfsr, 30, warn!(" - forced hardfault (from escalation)"));
+    warn!(" HFSR = {:#010x}", hfsr);
 
-    warn!(" CFSR = {:#010X}", cfsr);
+    // HardFault HFSR
+    ifs!(hfsr, VectTbl, "busfault on vector table read");
+    ifs!(hfsr, Forced, "fault escalated to hard fault");
+    ifs!(hfsr, DebugEvt, "breakpoint escalation");
 
-    // Memory Manage Fault Status Register
-    if_set!(cfsr, 0, warn!(" - instruction access violation"));
-    if_set!(cfsr, 1, warn!(" - data access violation"));
-    if_set!(cfsr, 3, warn!(" - memfault unstacking exception"));
-    if_set!(cfsr, 4, warn!(" - memfault stacking exception"));
-    if_set!(cfsr, 7, warn!(" - MMFAR valid"));
+    warn!(" CFSR = {:#010x}", cfsr);
 
-    // BusFault Status Register
-    if_set!(cfsr, 8, warn!(" - instruction fetch error"));
-    if_set!(cfsr, 9, warn!(" - precise data bus error"));
-    if_set!(cfsr, 10, warn!(" - imprecise error"));
-    if_set!(cfsr, 11, warn!(" - busfault unstacking exception"));
-    if_set!(cfsr, 12, warn!(" - busfault stacking exception"));
-    if_set!(cfsr, 15, warn!(" - BFAR valid"));
+    // MemManage MMFSR
+    ifs!(cfsr, IAccViol, "instruction access violation");
+    ifs!(cfsr, DAccViol, "direct data access violation");
+    ifs!(cfsr, MStkErr, "context stacking, MPU access violation");
+    ifs!(cfsr, MUnstkErr, "context unstacking, MPU access violation");
+    ifs!(cfsr, MLSPErr, "lazy floating-point state preservation");
+    ifs!(cfsr, MMARValid, "MMAR valid ({:#010x})", mmfar);
+
+    // BusFault BFSR
+    ifs!(cfsr, IBusErr, "instruction prefetch error");
+    ifs!(cfsr, PrecisErr, "precise data access error");
+    ifs!(cfsr, ImprecisErr, "imprecise data access error");
+    ifs!(cfsr, UnstkErr, "exception unstacking");
+    ifs!(cfsr, StkErr, "exception stacking");
+    ifs!(cfsr, LSPErr, "lazy floating-point state preservation");
+    ifs!(cfsr, BFARValid, "BFAR valid ({:#010x})", bfar);
 
     // UsageFault Status Register
-    if_set!(cfsr, 16, warn!(" - undefined instruction"));
-    if_set!(cfsr, 17, warn!(" - illegal use of EPSR"));
-    if_set!(cfsr, 18, warn!(" - invalid EXC_RETURN"));
-    if_set!(cfsr, 19, warn!(" - no coprocessor"));
-    if_set!(cfsr, 24, warn!(" - unaligned access"));
-    if_set!(cfsr, 25, warn!(" - divide by zero"));
+    ifs!(cfsr, UndefinStr, "undefined instruction");
+    ifs!(cfsr, InvState, "attempt to enter invalid instr. set state");
+    ifs!(cfsr, InvPC, "invalid EXC_RETURN");
+    ifs!(cfsr, NoCP, "attempt to access non-existing coprocessor");
+    ifs!(cfsr, StkOf, "stack overflow");
+    ifs!(cfsr, Unaligned, "unaligned access");
+    ifs!(cfsr, DivByZero, "divide by zero");
 
-    if_set!(cfsr, 7, warn!(" MMFAR = {:#010X}", mmfar));
-    if_not_set!(cfsr, 7, warn!(" MMFAR = <invalid>"));
-
-    if_set!(cfsr, 15, warn!(" BFAR = {:#010X}", bfar));
-    if_not_set!(cfsr, 15, warn!(" BFAR = <invalid>"));
-
-    warn!("");
+    info!("");
 }
 
 fn print_hint(frame: &ExceptionFrame) {
+    macro_rules! is_set {
+        ($reg:expr, $bit:path) => {{
+            $reg & (1 << $bit as u8) != 0
+        }};
+    }
+
     use log::info;
 
+    let pc = frame.pc;
     let scb = unsafe { &*SCB::ptr() };
     let cfsr = scb.cfsr.read();
+    let bfar = scb.bfar.read();
 
-    if cfsr & (1 << 9 | 1 << 15) != 0 {
-        info!(
-            "Instruction at {:#010X} tried to read {:#010X}",
-            frame.pc,
-            scb.bfar.read(),
-        );
+    info!("Hint:");
+    match (
+        is_set!(cfsr, CFSR::PrecisErr),
+        is_set!(cfsr, CFSR::ImprecisErr),
+        is_set!(cfsr, CFSR::BFARValid),
+    ) {
+        (true, _, true) => info!(" Instruction at {pc:#010x} tried to read {bfar:#010x}"),
+        (true, _, false) => info!(" Instruction at {pc:#010x} did something"),
+        (_, true, true) => info!(" Instruction near {pc:#010x} tried to write {bfar:#010x}"),
+        (_, true, false) => info!(" Instruction near {pc:#010x} did something"),
+        _ => info!(" Dig out the manual"),
     }
+
+    if cfsr & (1 << CFSR::MMARValid as u8 | 1 << CFSR::BFARValid as u8) != 0 {}
 }
 
 pub fn handle_panic(info: &PanicInfo, init: impl FnOnce(&PanicInfo)) -> ! {
