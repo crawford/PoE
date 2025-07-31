@@ -453,11 +453,8 @@ mod app {
         cx.local.terminal.poll();
         handle_terminal::spawn_after(100u32.millis()).expect("schedule handle_terminal");
     }
-}
 
-#[cortex_m_rt::exception]
-fn SVCall() {
-    poe::api::invoke!();
+    poe::call::svcall!();
 }
 
 /// Steals the LEDs so they may be used directly.

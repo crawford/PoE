@@ -68,21 +68,74 @@ enum Args {
         event_id: u32,
         handler: Handler,
     },
-    TriggerEvent {
-        id: u32,
-    },
     PrintString {
         str: *const ffi::c_char,
     },
 }
 
 #[macro_export]
-macro_rules! invoke {
+macro_rules! svcall {
     () => {
-        unsafe { core::arch::asm!("bl handle_call") }
+        #[unsafe(naked)]
+        extern "C" fn call(a: u32, b: u32, c: u32, d: u32, e: u32) {
+            core::arch::naked_asm!("svc 0")
+        }
+
+        #[unsafe(naked)]
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn SVCall() {
+            core::arch::naked_asm!(
+                // Pass-through non TriggerEvent calls
+                "movw r12, #:lower16:{0}",
+                "movt r12, #:upper16:{0}",
+                "cmp  r12, r0",
+                "bne  handle",
+
+                // Look up the exception handler
+                "push {{ lr }}",
+                "bl   find_handler_by_id", // id is already in r1
+                "pop  {{ lr }}",
+
+                // Check for null
+                "cmp r0,  #0",
+                "bne 1f",
+
+                "mov r0,  #1",  // return 1
+                "mrs r12, msp",
+                "str r0,  [r12, #0]",
+                "bx  lr",
+
+                "1:",
+
+                // Manipulate the stack
+                "mrs r12, msp", // zero registers
+                "mov r1, #0",
+                "str r1, [r12, #0]",  // R0
+                "str r1, [r12, #4]",  // R1
+                "str r1, [r12, #8]",  // R2
+                "str r1, [r12, #12]", // R3
+                "str r1, [r12, #16]", // R12
+
+                "ldr r1, [r12, #24]", // put PC into LR
+                "orr r1, r1, #1",
+                "str r1, [r12, #20]",
+
+                "str r0, [r12, #24]", // put handler into PC
+
+                // Return to the event handler
+                "bx lr",
+
+                const poe::call::TRIGGER_EVENT,
+            )
+        }
     };
 }
-pub use invoke;
+pub use svcall;
+
+#[unsafe(no_mangle)]
+extern "C" fn find_handler_by_id(_ignore: *const (), id: EventIdent) -> Option<Handler> {
+    STORE.find(id)
+}
 
 pub type EventIdent = u32;
 
@@ -139,11 +192,12 @@ impl HandlerStore {
         self.handlers.iter().find(|entry| !entry.is_set())
     }
 
-    fn find_all(&self, id: EventIdent) -> impl Iterator<Item = Handler> + '_ {
+    fn find(&self, id: EventIdent) -> Option<Handler> {
         self.handlers
             .iter()
             .filter_map(|entry| entry.get())
             .filter_map(move |(eid, handler)| if eid == id { Some(handler) } else { None })
+            .next()
     }
 }
 
@@ -152,7 +206,7 @@ unsafe impl Sync for HandlerStore {}
 static STORE: HandlerStore = HandlerStore::new();
 
 #[unsafe(no_mangle)]
-pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
+extern "C" fn handle(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
     let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
         log::warn!("ignoring API call ({id:#010x})");
         return;
@@ -178,13 +232,6 @@ pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u3
                 log::warn!("failed to register handler: no space")
             }
         },
-        Args::TriggerEvent { id } => {
-            log::info!("TriggerEvent({id})");
-            STORE.find_all(id).for_each(|handler| {
-                log::debug!("Calling: {handler:p}");
-                handler()
-            });
-        }
         Args::PrintString { str } => match unsafe { ffi::CStr::from_ptr(str) }.to_str() {
             Ok(str) => log::info!("{str}"),
             Err(err) => log::warn!("PrintString failed: {err:?}"),
@@ -216,11 +263,7 @@ fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<A
                 handler: unsafe { core::mem::transmute(func) },
             })
         }
-        Procedure::TriggerEvent => {
-            let id: u32 = arg0;
-
-            Some(Args::TriggerEvent { id })
-        }
+        Procedure::TriggerEvent => panic!("TriggerEvent failed"),
         Procedure::PrintString => {
             let str: u32 = arg0;
 

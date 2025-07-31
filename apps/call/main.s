@@ -13,14 +13,17 @@ _start:
 	movw r0, #0x8A43	;@ proc: TriggerEvent
 	movt r0, #0x6543
 	movw r1, #0xABCD	;@ event id: 0xABCD
+	push { lr }
 	svc  0
+	pop  { lr }
 
+	mov r0, #0
 	bx lr
 
 handler:
-	movw r0, #0x6986
+	movw r0, #0x6986        ;@ proc: PrintString
 	movt r0, #0x0A06
-	ldr  r1, =message
+	ldr  r1, =message       ;@ str: message
 	svc  0
 
 	bx lr
