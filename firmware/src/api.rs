@@ -76,11 +76,6 @@ enum Args {
     },
 }
 
-struct Call {
-    proc: Procedure,
-    args: Args,
-}
-
 #[macro_export]
 macro_rules! invoke {
     () => {
@@ -158,90 +153,78 @@ static STORE: HandlerStore = HandlerStore::new();
 
 #[no_mangle]
 pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
-    let Some(call) = capture_call(id, arg0, arg1, arg2, arg3) else {
+    let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
         log::warn!("ignoring API call ({id:#010x})");
         return;
     };
 
-    match (call.proc, call.args) {
-        (
-            Procedure::OpenSocket,
-            Args::OpenSocket {
-                remote_addr,
-                remote_port,
-                control_callback,
-                data_callback,
-            },
-        ) => {
+    match args {
+        Args::OpenSocket {
+            remote_addr,
+            remote_port,
+            control_callback,
+            data_callback,
+        } => {
             log::info!("OpenSocket({remote_addr:?}, {remote_port}, {control_callback:p} {data_callback:p})");
         }
-        (Procedure::RegisterHandler, Args::RegisterHandler { event_id, handler }) => {
-            match STORE.next_free() {
-                Some(entry) => {
-                    log::debug!("RegisterHandler({event_id:#06x}, {handler:p}) @ {entry:p}");
-                    let _ = entry.set(event_id, handler);
-                }
-                None => {
-                    log::warn!("failed to register handler: no space")
-                }
+        Args::RegisterHandler { event_id, handler } => match STORE.next_free() {
+            Some(entry) => {
+                log::debug!("RegisterHandler({event_id:#06x}, {handler:p}) @ {entry:p}");
+                let _ = entry.set(event_id, handler);
             }
-        }
-        (Procedure::TriggerEvent, Args::TriggerEvent { id }) => {
+            None => {
+                log::warn!("failed to register handler: no space")
+            }
+        },
+        Args::TriggerEvent { id } => {
             log::info!("TriggerEvent({id})");
             STORE.find_all(id).for_each(|handler| {
                 log::debug!("Calling: {handler:p}");
                 handler()
             });
         }
-        (Procedure::PrintString, Args::PrintString { str }) => {
-            match unsafe { ffi::CStr::from_ptr(str) }.to_str() {
-                Ok(str) => log::info!("{str}"),
-                Err(err) => log::warn!("PrintString failed: {err:?}"),
-            }
-        }
-        _ => panic!("malformed API call"),
+        Args::PrintString { str } => match unsafe { ffi::CStr::from_ptr(str) }.to_str() {
+            Ok(str) => log::info!("{str}"),
+            Err(err) => log::warn!("PrintString failed: {err:?}"),
+        },
     }
 }
 
-fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<Call> {
-    let proc = Procedure::try_from(id).ok()?;
-
-    let args = match proc {
+fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<Args> {
+    match Procedure::try_from(id).ok()? {
         Procedure::OpenSocket => {
             let remote_addr = arg0.to_ne_bytes();
             let remote_port = arg1 as u16;
             let control_callback = unsafe { mem::transmute(arg2 as usize as *const ()) };
             let data_callback = unsafe { mem::transmute(arg3 as usize as *const ()) };
 
-            Args::OpenSocket {
+            Some(Args::OpenSocket {
                 remote_addr,
                 remote_port,
                 control_callback,
                 data_callback,
-            }
+            })
         }
         Procedure::RegisterHandler => {
             let id: u32 = arg0;
             let func: u32 = arg1;
 
-            Args::RegisterHandler {
+            Some(Args::RegisterHandler {
                 event_id: id,
                 handler: unsafe { core::mem::transmute(func) },
-            }
+            })
         }
         Procedure::TriggerEvent => {
             let id: u32 = arg0;
 
-            Args::TriggerEvent { id }
+            Some(Args::TriggerEvent { id })
         }
         Procedure::PrintString => {
             let str: u32 = arg0;
 
-            Args::PrintString {
+            Some(Args::PrintString {
                 str: str as *const ffi::c_char,
-            }
+            })
         }
-    };
-
-    Some(Call { proc, args })
+    }
 }
