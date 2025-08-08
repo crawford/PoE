@@ -13,14 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use InterpreterMode::*;
+use InterpreterState::*;
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::fmt::Write;
 use core::ops::Range;
 use core::{mem, str};
 use ignore_result::Ignore;
-use InterpreterMode::*;
-use InterpreterState::*;
 
 macro_rules! output {
     ($w:expr, $fmt:literal $(, $( $args:expr ),+ )?) => {

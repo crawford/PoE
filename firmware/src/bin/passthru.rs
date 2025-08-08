@@ -22,7 +22,7 @@
 /// - identify - Send a "0" or a "1" over TCP to the control port to disable or enable,
 ///              respectively, the flashing "Identify" LED.
 use efm32gg_hal::cmu::CMUExt;
-use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
+use efm32gg_hal::gpio::{EFM32Pin, GPIOExt, Output, pins};
 use led::mono::{self, CommonAnodeLED};
 use poe::fault;
 
@@ -36,7 +36,7 @@ type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
 )]
 mod app {
     use poe::command::{Interpreter, InterpreterMode};
-    use poe::efm32gg::{self, dma, EFM32GG};
+    use poe::efm32gg::{self, EFM32GG, dma};
     use poe::ksz8091::KSZ8091;
     use poe::network;
 
@@ -540,7 +540,7 @@ fn SVCall() {
 ///
 /// This overrides any existing configuration.
 unsafe fn steal_leds() -> (IdentifyLed, NetworkLed) {
-    let periph = efm32gg11b820::Peripherals::steal();
+    let periph = unsafe { efm32gg11b820::Peripherals::steal() };
     let gpio = periph.GPIO.split(periph.CMU.constrain().split().gpio);
 
     let id = CommonAnodeLED::new(gpio.pe4.as_opendrain());

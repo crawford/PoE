@@ -16,19 +16,19 @@
 pub mod dma;
 
 use crate::mac;
-use crate::phy::{probe_addr as probe_phy_addr, LinkState, Phy, Register};
+use crate::phy::{LinkState, Phy, Register, probe_addr as probe_phy_addr};
 use core::cmp;
 use core::convert::TryInto;
 use dma::{
     BufferDescriptor, BufferDescriptorOwnership, RxBuffer, RxBufferDescriptor, TxBuffer,
     TxBufferDescriptor,
 };
-use efm32gg11b820::{self, Interrupt, ETH, NVIC};
+use efm32gg11b820::{self, ETH, Interrupt, NVIC};
 use embedded_hal::blocking::delay::DelayMs;
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 use ignore_result::Ignore;
 use smoltcp::wire::EthernetAddress;
-use smoltcp::{self, phy, time, Error};
+use smoltcp::{self, Error, phy, time};
 
 pub struct EFM32GG<'a, P: Phy> {
     mac: Mac<'a>,

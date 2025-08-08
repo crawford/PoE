@@ -18,7 +18,7 @@
 
 /// Sandbox for development on the SLSTK3701A dev board
 use efm32gg_hal::cmu::CMUExt;
-use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
+use efm32gg_hal::gpio::{EFM32Pin, GPIOExt, Output, pins};
 use ignore_result::Ignore;
 use led::rgb::{self, Color};
 use poe::fault;
@@ -466,7 +466,7 @@ fn SVCall() {
 ///
 /// This overrides any existing configuration.
 unsafe fn steal_leds() -> (LED0, LED1) {
-    let periph = efm32gg11b820::Peripherals::steal();
+    let periph = unsafe { efm32gg11b820::Peripherals::steal() };
     let gpio = periph.GPIO.split(periph.CMU.constrain().split().gpio);
 
     let led0 = rgb::CommonAnodeLED::new(

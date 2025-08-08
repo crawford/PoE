@@ -111,9 +111,9 @@ fn print_fault_status_registers() {
         };
     }
 
-    use log::{info, warn};
     use CFSR::*;
     use HFSR::*;
+    use log::{info, warn};
 
     let scb = unsafe { &*SCB::ptr() };
 
@@ -163,9 +163,7 @@ fn print_fault_status_registers() {
 
 fn print_hint(frame: &ExceptionFrame) {
     macro_rules! is_set {
-        ($reg:expr, $bit:path) => {{
-            $reg & (1 << $bit as u8) != 0
-        }};
+        ($reg:expr, $bit:path) => {{ $reg & (1 << $bit as u8) != 0 }};
     }
 
     use log::info;

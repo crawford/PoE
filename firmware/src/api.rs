@@ -151,7 +151,7 @@ unsafe impl Sync for HandlerStore {}
 
 static STORE: HandlerStore = HandlerStore::new();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
     let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
         log::warn!("ignoring API call ({id:#010x})");
@@ -165,7 +165,9 @@ pub extern "C" fn handle_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u3
             control_callback,
             data_callback,
         } => {
-            log::info!("OpenSocket({remote_addr:?}, {remote_port}, {control_callback:p} {data_callback:p})");
+            log::info!(
+                "OpenSocket({remote_addr:?}, {remote_port}, {control_callback:p} {data_callback:p})"
+            );
         }
         Args::RegisterHandler { event_id, handler } => match STORE.next_free() {
             Some(entry) => {
