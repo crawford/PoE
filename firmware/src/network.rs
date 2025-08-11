@@ -133,11 +133,15 @@ impl Resources {
 
     #[cfg(feature = "telnet")]
     fn handle_telnet(&mut self) {
+        use core::cmp;
+
         use InterpreterMode::*;
         #[allow(unused)]
         use TelnetCommands::*;
         #[allow(unused)]
         use TelnetOptions::*;
+
+        const BUFFER_LEN: usize = 512;
 
         const EOF: u8 = 236;
         const IP: u8 = 244;
@@ -209,11 +213,18 @@ impl Resources {
         }
 
         if socket.can_recv() && socket.can_send() {
-            let mut data = [0; 512];
+            static mut DATA: [u8; BUFFER_LEN] = [0; BUFFER_LEN];
+            static mut LEN: usize = 0;
+
             let request = socket
-                .recv(|b| {
-                    data[..b.len()].copy_from_slice(b);
-                    (b.len(), &data[..b.len()])
+                .recv(|b| unsafe {
+                    let new_len = cmp::min(BUFFER_LEN - LEN, b.len());
+                    let new = &b[..new_len];
+
+                    DATA[LEN..(LEN + new_len)].copy_from_slice(new);
+                    LEN += new_len;
+
+                    (new_len, &DATA[..LEN])
                 })
                 .expect("receiving from telnet");
 
@@ -258,7 +269,14 @@ impl Resources {
                 return;
             }
 
-            self.interpreter.exec(bytes.as_slice(), socket);
+            let remaining = self.interpreter.exec(bytes.as_slice(), socket);
+            unsafe {
+                for (i, j) in ((LEN - remaining.len())..LEN).enumerate() {
+                    DATA[i] = DATA[j];
+                }
+                LEN = remaining.len();
+            }
+
             let mode = self.interpreter.mode();
             match (self.prev_mode, mode) {
                 (Command, Data) => {

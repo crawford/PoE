@@ -110,8 +110,14 @@ impl Interpreter {
         }
     }
 
-    pub fn exec<W: Write>(&mut self, input: &[u8], output: &mut W) {
+    pub fn exec<'a, W: Write>(&mut self, input: &'a [u8], output: &mut W) -> &'a [u8] {
         for line in input.split_inclusive(|b| b == &b'\n') {
+            if let Some(last) = line.last() {
+                if last != &b'\n' {
+                    return line;
+                }
+            }
+
             self.state = match self.state {
                 Idle => {
                     let cmd = str::from_utf8(line).unwrap_or_else(|err| {
@@ -123,6 +129,8 @@ impl Interpreter {
                 Writing(ref region) => write_data(line, region, output),
             }
         }
+
+        &[]
     }
 
     pub fn abort<W: Write>(&mut self, output: &mut W) {

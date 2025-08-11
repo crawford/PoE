@@ -121,12 +121,24 @@ impl Terminal {
     }
 
     pub fn poll(&mut self) {
-        let mut input = [0u8; 512];
-        let len = self.input.read(&mut input);
+        const INPUT_LEN: usize = 512;
+        static mut INPUT: [u8; INPUT_LEN] = [0u8; INPUT_LEN];
+        static mut LEN: usize = 0;
+
+        let len = self.input.read(unsafe { &mut INPUT[LEN..] });
         if len == 0 {
             return;
         }
+        unsafe { LEN += len; }
 
-        self.interpreter.exec(&input[0..len], &mut self.output)
+        let remaining = self
+            .interpreter
+            .exec(unsafe { &INPUT[..LEN] }, &mut self.output);
+        unsafe {
+            for (i, j) in ((LEN - remaining.len())..LEN).enumerate() {
+                INPUT[i] = INPUT[j];
+            }
+            LEN = remaining.len();
+        }
     }
 }
