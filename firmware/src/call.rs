@@ -83,7 +83,7 @@ macro_rules! svcall {
 
         #[unsafe(naked)]
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn SVCall() {
+        pub unsafe extern "C" fn SVCall(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
             core::arch::naked_asm!(
                 // Pass-through non TriggerEvent calls
                 "movw r12, #:lower16:{0}",
