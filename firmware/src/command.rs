@@ -50,19 +50,19 @@ macro_rules! outputln {
 }
 
 const HELP_STR: &str = "Command Interpreter
-
-Available commands:
-
-  get <hex address>                Read address
-  set <hex address> <hex value>    Write value to address
-  read <hex address> <length>      Read bytes starting at address
-  erase <hex address> <length>     Erase flash (address and length must be page-aligned)
-  write <hex address> <length>     Write input to address
-  call <hex address>               Call function at address
-  prog addr                        Display the start address of program space
-  prog write <length>              Write input to program space
-  prog run                         Call function in program space
-  help                             Display this help text";
+\r
+\rAvailable commands:
+\r
+\r  get <hex address>                Read address
+\r  set <hex address> <hex value>    Write value to address
+\r  read <hex address> <length>      Read bytes starting at address
+\r  erase <hex address> <length>     Erase flash (address and length must be page-aligned)
+\r  write <hex address> <length>     Write input to address
+\r  call <hex address>               Call function at address
+\r  prog addr                        Display the start address of program space
+\r  prog write <length>              Write input to program space
+\r  prog run                         Call function in program space
+\r  help                             Display this help text";
 
 const PROMPT_STR: &str = "> ";
 
