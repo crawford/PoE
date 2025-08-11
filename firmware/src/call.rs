@@ -93,7 +93,8 @@ macro_rules! svcall {
 
                 // Look up the exception handler
                 "push {{ lr }}",
-                "bl   find_handler_by_id", // id is already in r1
+                "mov  r0, r1",
+                "bl   find_handler_by_id",
                 "pop  {{ lr }}",
 
                 // Check for null
@@ -133,7 +134,7 @@ macro_rules! svcall {
 pub use svcall;
 
 #[unsafe(no_mangle)]
-extern "C" fn find_handler_by_id(_ignore: *const (), id: EventIdent) -> Option<Handler> {
+extern "C" fn find_handler_by_id(id: EventIdent) -> Option<Handler> {
     STORE.find(id)
 }
 
