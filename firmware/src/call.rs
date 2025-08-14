@@ -350,11 +350,17 @@ impl HandlerStore {
     ) -> Option<&HandlerStoreEntry> {
         self.handlers
             .iter()
-            .skip(if last == core::ptr::null() {
-                0
-            } else {
-                usize::try_from(unsafe { last.offset_from(self.handlers.as_ptr()) }).unwrap() + 1
-            })
+            .skip(
+                if last == core::ptr::null() {
+                    0
+                } else {
+                    usize::try_from(unsafe { last.offset_from(self.handlers.as_ptr()) }).unwrap()
+                        + 1
+                }, // last.and_then(|last| {
+                   //     usize::try_from(unsafe { last.offset_from(self.handlers.as_ptr()) }).ok()
+                   // })
+                   // .unwrap_or(0),
+            )
             .filter_map(|entry| match entry.get() {
                 Some((eid, _handler)) if eid == id => Some(entry),
                 _ => None,
