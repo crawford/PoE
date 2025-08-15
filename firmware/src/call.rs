@@ -106,8 +106,16 @@ macro_rules! svcall {
                 //   +1                 LR
                 //   +1                 null
                 //   +(4*MAX_HANDLERS)  handlers
-                //   (+1)               (optional padding)
+                //   (+4)               (optional padding)
                 //   +32                exception frame
+                //     +4                 xPSR
+                //     +4                 pc
+                //     +4                 lr
+                //     +4                 r12
+                //     +4                 r3
+                //     +4                 r2
+                //     +4                 r1
+                //     +4                 r0
                 "mrs r12, msp", // TODO move the stacked exception frame down MAX_HANDLERS + 2 (null terminator, saved LR)
 
                 // TODO: implement support for FP extension
@@ -130,21 +138,13 @@ macro_rules! svcall {
                 // r12 - current exception frame
                 // r1 and r2 may differ by one word, depending on exception frame stack alignment
 
-                // TODO: memmove based on number of matched exception handlers
-                "ldr r3,  [r2,  #4]", // R1
-                "str r3,  [r12, #4]",
-                "ldr r3,  [r2,  #8]", // R2
-                "str r3,  [r12, #8]",
-                "ldr r3,  [r2,  #12]", // R3
-                "str r3,  [r12, #12]",
-                "ldr r3,  [r2,  #16]", // R12
-                "str r3,  [r12, #16]",
-                "ldr r3,  [r2,  #20]", // LR
-                "str r3,  [r12, #20]",
-                "ldr r3,  [r2,  #24]", // PC
-                "str r3,  [r12, #24]",
-                "ldr r3,  [r2,  #28]", // xPSR
-                "str r3,  [r12, #28]",
+                "push {{ r4-r9, lr }}",
+
+                "add   r2,  r2,  #4", // skip R0, was set above
+                "add   r12, r12, #4",
+                "ldmia r2,  {{ r3-r9 }}", // copy R1, R2, R3, R12, LR, PC, and xPSR to new frame
+                "stmia r12, {{ r3-r9 }}",
+                "sub   r12, r12, #4",
 
                 "ldr r3, [r12, #20]", // move LR above exception frame and handlers
                 "str r3, [r1,  #(4*({1} + 1))]",
@@ -157,7 +157,6 @@ macro_rules! svcall {
                 "str  r3, [r12, #24]",
 
                 // Stack up the exception handlers
-                "push {{ r4, r5, r6, r7, lr }}",
                 "mov r4, r1", // point r4 to the array of exception handlers
                 "mov r5, #0", // last HandlerStoreEntry found
                 "mov r6, #0", // found count
@@ -183,9 +182,9 @@ macro_rules! svcall {
                 // Null-terminate the array of exception handlers
                 "mov r0, #0",
                 "str r0, [r4]",
-                "pop {{ r4, r5, r6, r7, lr }}",
 
                 // Return to call_event_handlers
+                "pop {{ r4-r9, lr }}",
                 "bx lr",
 
                 const poe::call::TRIGGER_EVENT,
