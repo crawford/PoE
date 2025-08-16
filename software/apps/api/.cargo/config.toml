@@ -1,0 +1,10 @@
+[build]
+target = "thumbv7m-none-eabi"
+
+[target.thumbv7m-none-eabi]
+rustflags = [
+  "--codegen", "link-arg=-Ttext=0x20002e28"
+]
+
+[alias]
+copy-binary = "objcopy -- -O binary main.bin"

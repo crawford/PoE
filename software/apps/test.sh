@@ -52,3 +52,4 @@ function check() {
 
 check call "> Return value (may not be valid): 0x00000000"
 check return "> Return value (may not be valid): 0xABCDEF01"
+check api "> Return value (may not be valid): 0x00000000"

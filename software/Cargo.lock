@@ -7,6 +7,13 @@ name = "api"
 version = "0.1.0-dev"
 
 [[package]]
+name = "app-api"
+version = "0.1.0"
+dependencies = [
+ "api",
+]
+
+[[package]]
 name = "atomic-polyfill"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
