@@ -1,0 +1,10 @@
+[workspace]
+members = [ "api", "supervisor" ]
+resolver = "3"
+
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+lto = true
+opt-level = "s"

@@ -1,6 +1,2 @@
-[build]
-target = "thumbv7m-none-eabi"
-
 [target.thumbv7m-none-eabi]
-runner = "./run.sh"
 rustflags = [ "--codegen", "link-arg=-Tlink.x" ]

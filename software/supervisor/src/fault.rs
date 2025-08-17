@@ -115,7 +115,7 @@ fn print_fault_status_registers() {
     use HFSR::*;
     use log::{info, warn};
 
-    let scb = unsafe { &*SCB::ptr() };
+    let scb = unsafe { &*SCB::PTR };
 
     let hfsr = scb.hfsr.read();
     let cfsr = scb.cfsr.read();
@@ -169,7 +169,7 @@ fn print_hint(frame: &ExceptionFrame) {
     use log::info;
 
     let pc = frame.pc;
-    let scb = unsafe { &*SCB::ptr() };
+    let scb = unsafe { &*SCB::PTR };
     let cfsr = scb.cfsr.read();
     let bfar = scb.bfar.read();
 

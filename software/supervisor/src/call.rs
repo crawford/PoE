@@ -17,61 +17,8 @@ use core::cell::UnsafeCell;
 use core::convert::TryFrom;
 use core::{arch, ffi, fmt, mem};
 
-#[repr(u32)]
-#[non_exhaustive]
-pub enum SocketEvent {
-    Opened,
-    Closed,
-}
+use api::*;
 
-pub struct Socket {}
-
-pub type SocketControlCallback = extern "C" fn(socket: *mut Socket, state: SocketEvent);
-pub type SocketDataCallback = extern "C" fn(socket: *mut Socket, data: *const u8, len: usize);
-pub type Handler = extern "C" fn();
-
-pub const OPEN_SOCKET: u32 = Procedure::OpenSocket as u32;
-pub const REGISTER_HANDLER: u32 = Procedure::RegisterHandler as u32;
-pub const TRIGGER_EVENT: u32 = Procedure::TriggerEvent as u32;
-pub const PRINT_STRING: u32 = Procedure::PrintString as u32;
-
-#[repr(u32)]
-enum Procedure {
-    OpenSocket = 0x8BD6C7FF,
-    RegisterHandler = 0xD35DBF5A,
-    TriggerEvent = 0x65438A43,
-    PrintString = 0x0A066986,
-}
-
-impl TryFrom<u32> for Procedure {
-    type Error = ();
-
-    fn try_from(id: u32) -> Result<Self, Self::Error> {
-        match id {
-            OPEN_SOCKET => Ok(Procedure::OpenSocket),
-            REGISTER_HANDLER => Ok(Procedure::RegisterHandler),
-            TRIGGER_EVENT => Ok(Procedure::TriggerEvent),
-            PRINT_STRING => Ok(Procedure::PrintString),
-            _ => Err(()),
-        }
-    }
-}
-
-enum Args {
-    OpenSocket {
-        remote_addr: [u8; 4],
-        remote_port: u16,
-        control_callback: SocketControlCallback,
-        data_callback: SocketDataCallback,
-    },
-    RegisterHandler {
-        event_id: u32,
-        handler: Handler,
-    },
-    PrintString {
-        str: *const ffi::c_char,
-    },
-}
 
 /// Maximum number of handlers which can be triggered by a single event
 ///
@@ -82,11 +29,6 @@ pub const MAX_HANDLERS: usize = 6;
 #[macro_export]
 macro_rules! svcall {
     () => {
-        #[unsafe(naked)]
-        extern "C" fn call(a: u32, b: u32, c: u32, d: u32, e: u32) {
-            core::arch::naked_asm!("svc 0")
-        }
-
         #[unsafe(naked)]
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn SVCall(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
@@ -187,7 +129,7 @@ macro_rules! svcall {
                 "pop {{ r4-r9, lr }}",
                 "bx lr",
 
-                const poe::call::TRIGGER_EVENT,
+                const api::TRIGGER_EVENT,
                 const poe::call::MAX_HANDLERS,
             )
         }
