@@ -73,53 +73,103 @@ pub enum Args {
     },
 }
 
-#[inline(always)]
-pub extern "C" fn open_socket(remote_addr: u32, remote_port: u16, control_callback: SocketControlCallback, data_callback: SocketDataCallback) {
-    unsafe { core::arch::asm!(
-        "push {}",
+#[repr(u32)]
+pub enum OpenSocket {
+    TODO = 0,
+}
 
-        "svc 0",
+#[repr(u32)]
+pub enum RegisterHandler {
+    Registered = 0,
+    NoSpace = 1,
+}
 
-        "msr r0, msp",
-        "add r0, r0, #4",
-        "mrs r0, msp",
-
-        in(reg) data_callback,
-        in("r0") OPEN_SOCKET,
-        in("r1") remote_addr,
-        in("r2") remote_port,
-        in("r3") control_callback,
-        clobber_abi("C"),
-    ) }
+#[repr(u32)]
+pub enum PrintString {
+    Printed = 0,
+    Failed = 1,
 }
 
 #[inline(always)]
-pub extern "C" fn register_handler(event_id: u32, handler: Handler) {
-    unsafe { core::arch::asm!(
-        "svc 0",
-        in("r0") REGISTER_HANDLER,
-        in("r1") event_id,
-        in("r2") handler,
-        clobber_abi("C"),
-    ) }
+pub extern "C" fn open_socket(
+    remote_addr: u32,
+    remote_port: u16,
+    control_callback: SocketControlCallback,
+    data_callback: SocketDataCallback,
+) -> u32 {
+    let ret: u32;
+    unsafe {
+        core::arch::asm!(
+            "push {}",
+
+            "svc 0",
+
+            "msr r0, msp",
+            "add r0, r0, #4",
+            "mrs r0, msp",
+
+            in(reg) data_callback,
+            in("r0") OPEN_SOCKET,
+            in("r1") remote_addr,
+            in("r2") remote_port,
+            in("r3") control_callback,
+
+            lateout("r0") ret,
+
+            clobber_abi("C"),
+        )
+    }
+    ret
 }
 
 #[inline(always)]
-pub extern "C" fn trigger_event(event_id: u32) {
-    unsafe { core::arch::asm!(
-        "svc 0",
-        in("r0") TRIGGER_EVENT,
-        in("r1") event_id,
-        clobber_abi("C"),
-    ) }
+pub extern "C" fn register_handler(event_id: u32, handler: Handler) -> u32 {
+    let ret: u32;
+    unsafe {
+        core::arch::asm!(
+            "svc 0",
+            in("r0") REGISTER_HANDLER,
+            in("r1") event_id,
+            in("r2") handler,
+
+            lateout("r0") ret,
+
+            clobber_abi("C"),
+        )
+    }
+    ret
 }
 
 #[inline(always)]
-pub extern "C" fn print_string(str: *const u8) {
-    unsafe { core::arch::asm!(
-        "svc 0",
-        in("r0") PRINT_STRING,
-        in("r1") str,
-        clobber_abi("C"),
-    ) }
+pub extern "C" fn trigger_event(event_id: u32) -> u32 {
+    let ret: u32;
+    unsafe {
+        core::arch::asm!(
+            "svc 0",
+            in("r0") TRIGGER_EVENT,
+            in("r1") event_id,
+
+            lateout("r0") ret,
+
+            clobber_abi("C"),
+        )
+    }
+    ret
+}
+
+#[inline(always)]
+pub extern "C" fn print_string(str: *const u8) -> u32 {
+    let ret: u32;
+    unsafe {
+        core::arch::asm!(
+            "svc 0",
+            in("r0") PRINT_STRING,
+            in("r1") str,
+
+            lateout("r0") ret,
+
+            clobber_abi("C"),
+        )
+    }
+    ret
 }

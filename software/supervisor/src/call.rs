@@ -30,7 +30,7 @@ macro_rules! svcall {
     () => {
         #[unsafe(naked)]
         #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn SVCall(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
+        pub unsafe extern "C" fn SVCall(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
             core::arch::naked_asm!(
                 // Pass-through non TriggerEvent calls
                 "movw r12, #:lower16:{0}",
@@ -172,7 +172,7 @@ unsafe extern "C" fn handler_from_handler_entry(entry: *const HandlerStoreEntry)
 /// happens when `SVC` is used. The array of handlers must be null-terminated.
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-unsafe extern "C" fn call_event_handlers(handlers: *const Handler) {
+unsafe extern "C" fn call_event_handlers(handlers: *const Handler) -> u32 {
     arch::naked_asm!(
         "1:",
         "ldr r1, [r0]", // check for null
@@ -307,11 +307,26 @@ unsafe impl Sync for HandlerStore {}
 
 static STORE: HandlerStore = HandlerStore::new();
 
+#[unsafe(naked)]
 #[unsafe(no_mangle)]
-extern "C" fn handle(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
+unsafe extern "C" fn handle(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
+    core::arch::naked_asm!(
+        "push {{ lr }}",
+        "bl   {}",
+        "pop  {{ lr }}",
+
+        // move the result into the stacked r0
+        "str r0, [sp, #0]",
+        "bx  lr",
+
+        sym handle_internal,
+    )
+}
+
+fn handle_internal(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
     let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
         log::warn!("ignoring API call ({id:#010x})");
-        return;
+        return 0;
     };
 
     match args {
@@ -324,19 +339,28 @@ extern "C" fn handle(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
             log::info!(
                 "OpenSocket({remote_addr:?}, {remote_port}, {control_callback:p} {data_callback:p})"
             );
+            OpenSocket::TODO as u32
         }
         Args::RegisterHandler { event_id, handler } => match STORE.next_free() {
             Some(entry) => {
                 log::debug!("RegisterHandler({event_id:#06x}, {handler:p}) @ {entry:p}");
-                let _ = entry.set(event_id, handler);
+                entry.set(event_id, handler);
+                RegisterHandler::Registered as u32
             }
             None => {
-                log::warn!("failed to register handler: no space")
+                log::warn!("failed to register handler: no space");
+                RegisterHandler::NoSpace as u32
             }
         },
         Args::PrintString { str } => match unsafe { ffi::CStr::from_ptr(str) }.to_str() {
-            Ok(str) => log::info!("{str}"),
-            Err(err) => log::warn!("PrintString failed: {err:?}"),
+            Ok(str) => {
+                log::info!("{str}");
+                PrintString::Printed as u32
+            }
+            Err(err) => {
+                log::warn!("PrintString failed: {err:?}");
+                PrintString::Failed as u32
+            }
         },
     }
 }

@@ -15,7 +15,6 @@ _start:
 	movw r1, #0xABCD	;@ event id: 0xABCD
 	svc  0
 
-	mov r0, #0
 	bx lr
 
 handler:
