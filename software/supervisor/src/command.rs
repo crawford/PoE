@@ -329,9 +329,8 @@ where
                 let ret: u32;
                 unsafe {
                     asm!("blx {0}",
-                         "mov {1}, r0",
                          in(reg) addr,
-                         out(reg) ret
+                         out("r0") ret,
                     );
                 }
                 outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
@@ -355,9 +354,8 @@ where
                     let ret: u32;
                     unsafe {
                         asm!("blx {0}",
-                             "mov {1}, r0",
                              in(reg) addr,
-                             out(reg) ret
+                             out("r0") ret
                         );
                     }
                     outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
