@@ -19,7 +19,6 @@ use core::{arch, ffi, fmt, mem};
 
 use api::*;
 
-
 /// Maximum number of handlers which can be triggered by a single event
 ///
 /// Note that this value is chosen so that it, plus the null-terminator and the stacked LR, take up
@@ -44,7 +43,7 @@ macro_rules! svcall {
                 "bl   print_trigger",
                 "pop  {{ r0, lr }}",
 
-                // Manipulate the stack
+                // Manipulate the stack to match:
                 //   +1                 LR
                 //   +1                 null
                 //   +(4*MAX_HANDLERS)  handlers
@@ -291,17 +290,11 @@ impl HandlerStore {
     ) -> Option<&HandlerStoreEntry> {
         self.handlers
             .iter()
-            .skip(
-                if last == core::ptr::null() {
-                    0
-                } else {
-                    usize::try_from(unsafe { last.offset_from(self.handlers.as_ptr()) }).unwrap()
-                        + 1
-                }, // last.and_then(|last| {
-                   //     usize::try_from(unsafe { last.offset_from(self.handlers.as_ptr()) }).ok()
-                   // })
-                   // .unwrap_or(0),
-            )
+            .skip(if last == core::ptr::null() {
+                0
+            } else {
+                usize::try_from(unsafe { last.offset_from(self.handlers.as_ptr()) }).unwrap() + 1
+            })
             .filter_map(|entry| match entry.get() {
                 Some((eid, _handler)) if eid == id => Some(entry),
                 _ => None,
