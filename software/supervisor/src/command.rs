@@ -62,7 +62,8 @@ const HELP_STR: &str = "Command Interpreter
 \r  prog addr                        Display the start address of program space
 \r  prog write <length>              Write input to program space
 \r  prog run                         Call function in program space
-\r  help                             Display this help text";
+\r  help                             Display this help text
+\r  exit                             Close connection";
 
 const PROMPT_STR: &str = "> ";
 
@@ -87,11 +88,13 @@ static PROGRAM_SPACE: ProgramSpace<512> = ProgramSpace::new();
 pub enum InterpreterMode {
     Command,
     Data,
+    Terminate
 }
 
 enum InterpreterState {
     Idle,
     Writing(Range<usize>),
+    Exiting,
 }
 
 pub struct Interpreter {
@@ -107,7 +110,12 @@ impl Interpreter {
         match self.state {
             Idle => Command,
             Writing(_) => Data,
+            Exiting => Terminate,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.state = Idle;
     }
 
     pub fn exec<'a, W: Write>(&mut self, input: &'a [u8], output: &mut W) -> &'a [u8] {
@@ -127,6 +135,7 @@ impl Interpreter {
                     exec_command(cmd, output)
                 }
                 Writing(ref region) => write_data(line, region, output),
+                Exiting => return &[],
             }
         }
 
@@ -208,6 +217,7 @@ where
         match tokens.next() {
             Some("") | None => {}
             Some("help") => outputln!(output, HELP_STR),
+            Some("exit") => return InterpreterState::Exiting,
             Some("get") => {
                 let addr = token_hex_ptr!("addr");
                 match (addr as usize) % mem::size_of::<u32>() {

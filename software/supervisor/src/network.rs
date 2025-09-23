@@ -257,7 +257,10 @@ impl Resources {
                         Some(option) => log::debug!("ignoring telnet DON'T: option {option}"),
                         None => log::debug!("ignoring malformed telnet DON'T command"),
                     },
-                    Some(&EOF) => socket.close(),
+                    Some(&EOF) => {
+                        socket.close();
+                        self.interpreter.reset();
+                    },
                     Some(&IP) => abort = true,
                     Some(code) => log::debug!("ignoring telnet command: {code}"),
                     None => log::debug!("ignoring malformed telnet command"),
@@ -286,6 +289,10 @@ impl Resources {
                 (Data, Command) => {
                     // dont_option!(BINARY_TRANSMISSION);
                     // wont_option!(ECHO);
+                }
+                (_, Terminate) => {
+                    socket.close();
+                    self.interpreter.reset();
                 }
                 _ => {}
             }
