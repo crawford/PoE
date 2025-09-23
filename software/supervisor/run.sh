@@ -5,12 +5,15 @@ set -e
 
 cd -- "$(dirname -- "$0")"
 
-openocd \
-    --file openocd.cfg \
-    --command 'reset halt' \
-    --command "program ${1} verify reset" & pid=$!
+(
+    trap 'kill 0' EXIT
 
-sleep 1
+    openocd \
+        --file openocd.cfg \
+        --command 'reset halt' \
+        --command "program ${1} verify reset" &
 
-nc localhost 9091
-wait "$pid"
+    sleep 1
+
+    nc localhost 9091
+)
