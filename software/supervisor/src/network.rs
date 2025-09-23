@@ -297,10 +297,9 @@ impl Resources {
                 _ => {}
             }
             self.prev_mode = mode;
-        } else if !socket.may_send() {
-            // TODO: Why is this causing nmap to report that the socket is closed?
-            //       Does this only happen with the SLSTK3701A?
-            // socket.close();
+        } else if socket.peek(0) == Err(smoltcp::Error::Finished) {
+            socket.close();
+            self.interpreter.reset();
         }
     }
 }
