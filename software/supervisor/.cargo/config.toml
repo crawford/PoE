@@ -1,2 +1,0 @@
-[target.thumbv7m-none-eabi]
-rustflags = [ "--codegen", "link-arg=-Tlink.x" ]

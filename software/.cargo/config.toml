@@ -2,4 +2,5 @@
 target = "thumbv7m-none-eabi"
 
 [target.thumbv7m-none-eabi]
-runner = "supervisor/run.sh"
+runner = "./run.sh"
+rustflags = [ "--codegen", "link-arg=-Tlink.x" ]
