@@ -362,6 +362,7 @@ fn handle_internal(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
                 PrintString::Failed as u32
             }
         },
+        Args::ReturnValue { value } => value,
     }
 }
 
@@ -397,5 +398,6 @@ fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<A
                 str: str as *const ffi::c_char,
             })
         }
+        Procedure::ReturnValue => Some(Args::ReturnValue { value: arg0 }),
     }
 }

@@ -34,6 +34,7 @@ pub const OPEN_SOCKET: u32 = Procedure::OpenSocket as u32;
 pub const REGISTER_HANDLER: u32 = Procedure::RegisterHandler as u32;
 pub const TRIGGER_EVENT: u32 = Procedure::TriggerEvent as u32;
 pub const PRINT_STRING: u32 = Procedure::PrintString as u32;
+pub const RETURN_VALUE: u32 = Procedure::ReturnValue as u32;
 
 #[repr(u32)]
 pub enum Procedure {
@@ -41,6 +42,7 @@ pub enum Procedure {
     RegisterHandler = 0xD35DBF5A,
     TriggerEvent = 0x65438A43,
     PrintString = 0x0A066986,
+    ReturnValue = 0x1035E6E8,
 }
 
 impl TryFrom<u32> for Procedure {
@@ -52,6 +54,7 @@ impl TryFrom<u32> for Procedure {
             REGISTER_HANDLER => Ok(Procedure::RegisterHandler),
             TRIGGER_EVENT => Ok(Procedure::TriggerEvent),
             PRINT_STRING => Ok(Procedure::PrintString),
+            RETURN_VALUE => Ok(Procedure::ReturnValue),
             _ => Err(()),
         }
     }
@@ -70,6 +73,9 @@ pub enum Args {
     },
     PrintString {
         str: *const ffi::c_char,
+    },
+    ReturnValue {
+        value: u32,
     },
 }
 
