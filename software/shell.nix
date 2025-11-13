@@ -1,8 +1,10 @@
 let
-  rev = "78e723925daf5c9e8d0a1837ec27059e61649cb6";
+  nixpkgs = "nixos-22.11";
+  nixpkgs-mozilla = "78e723925daf5c9e8d0a1837ec27059e61649cb6";
+  import-archive = org-repo: rev: (import (fetchTarball "https://github.com/${org-repo}/archive/${rev}.tar.gz"));
 in
-with import <nixpkgs> {
-  overlays = [ (import (builtins.fetchTarball "https://github.com/mozilla/nixpkgs-mozilla/archive/${rev}.tar.gz")) ];
+with (import-archive "NixOS/nixpkgs" nixpkgs) {
+  overlays = [ (import-archive "mozilla/nixpkgs-mozilla" nixpkgs-mozilla) ];
 };
 
 let
