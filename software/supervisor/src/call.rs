@@ -13,6 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Supervisor call interface and implementation.
+//!
+//! Supervisor calls use the SVCall instruction to jump from apps into the supervisor. When this
+//! instruction is executed, the ARMv7-M processor stacks the context (R0, R1, R2, R3, R12, LR
+//! (R14), PC, and xPSR, in that order from the stack pointer down) and jumps to the handler. For
+//! most calls, the exception handler simply branches to [`handle_procedure_call`] and treats the
+//! call like any other AAPCS-compliant procedure. The [`TriggerEvent`](Procedure::TriggerEvent)
+//! procedure requires some special handling, however.
+//!
+//! When [`TriggerEvent`](Procedure::TriggerEvent) is called, the handlers registered to that event
+//! need to be called one-by-one, but from the context of the app. In order to do this, the stack is
+//! manipulated to make it look as if a call was made to [`call_event_handlers`] instead of SVCall.
+
 use core::cell::UnsafeCell;
 use core::convert::TryFrom;
 use core::{arch, ffi, fmt, mem};
@@ -21,9 +34,9 @@ use api::*;
 
 /// Maximum number of handlers which can be triggered by a single event
 ///
-/// Note that this value is chosen so that it, plus the null-terminator and the stacked LR, take up
-/// 8 words on the stack. This maintains the 8-byte stack alignment of the stacked frame.
-pub const MAX_HANDLERS: usize = 6;
+/// Note that this value is chosen so that it, plus the null-terminator, take up 8 words on the
+/// stack. This maintains the 8-byte stack alignment of the stacked frame.
+pub const MAX_HANDLERS: usize = 7;
 
 #[macro_export]
 macro_rules! svcall {
@@ -32,104 +45,22 @@ macro_rules! svcall {
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn SVCall(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
             core::arch::naked_asm!(
-                // Pass-through non TriggerEvent calls
+                // pass-through non TriggerEvent calls
                 "movw r12, #:lower16:{0}",
                 "movt r12, #:upper16:{0}",
                 "cmp  r12, r0",
-                "bne  handle",
+                "beq  handle_trigger_event",
 
-                "mov  r0, r1", // event id in r0
-                "push {{ r0, lr }}",
-                "bl   print_trigger",
-                "pop  {{ r0, lr }}",
+                // call the generic handler
+                "push {{ r4, lr }}", // push r4 to maintain alignment
+                "bl   handle_procedure_call",
+                "pop {{ r4, lr }}",
 
-                // Manipulate the stack to match:
-                //   +1                 LR
-                //   +1                 null
-                //   +(4*MAX_HANDLERS)  handlers
-                //   (+4)               (optional padding)
-                //   +32                exception frame
-                //     +4                 xPSR
-                //     +4                 pc
-                //     +4                 lr
-                //     +4                 r12
-                //     +4                 r3
-                //     +4                 r2
-                //     +4                 r1
-                //     +4                 r0
-                "mrs r12, msp", // TODO move the stacked exception frame down MAX_HANDLERS + 2 (null terminator, saved LR)
-
-                // TODO: implement support for FP extension
-                "ldr   r1,  [r12, #28]", // check for alignment padding, assign frame size to r3
-                "tst   r1,  #(1 << 9)", // check xPSR.STKALIGN, 0x0200 means the padding was applied
-                "ite   ne",
-                "movne r3, #(4*8 + 4)",
-                "moveq r3, #(4*8)",
-
-                "mov r2, r12", // save address of original exception frame to r2
-                "sub r12, r12, #(4*({1} + 2))", // reserve space for the handlers
-                "msr msp, r12",
-
-                "add r1, r3, r12", // move handlers into R0
-                "str r1, [r12, #0]",
-
-                // r0  - event id
-                // r1  - beginning of handlers
-                // r2  - original exception frame
-                // r12 - current exception frame
-                // r1 and r2 may differ by one word, depending on exception frame stack alignment
-
-                "push {{ r4-r9, lr }}",
-
-                "add   r2,  r2,  #4", // skip R0, was set above
-                "add   r12, r12, #4",
-                "ldmia r2,  {{ r3-r9 }}", // copy R1, R2, R3, R12, LR, PC, and xPSR to new frame
-                "stmia r12, {{ r3-r9 }}",
-                "sub   r12, r12, #4",
-
-                "ldr r3, [r12, #20]", // move LR above exception frame and handlers
-                "str r3, [r1,  #(4*({1} + 1))]",
-
-                "ldr r3, [r12, #24]", // put PC into LR
-                "str r3, [r12, #20]",
-
-                "movw r3, #:lower16:call_event_handlers", // put call_event_handlers into PC
-                "movt r3, #:upper16:call_event_handlers",
-                "str  r3, [r12, #24]",
-
-                // Stack up the exception handlers
-                "mov r4, r1", // point r4 to the array of exception handlers
-                "mov r5, #0", // last HandlerStoreEntry found
-                "mov r6, #0", // found count
-                "mov r7, r0", // event id into r7
-
-                "1:",
-                "mov r0, r7", // event id
-                "mov r1, r5", // last handler entry
-                "bl  find_next_handler_entry_by_id",
-                "mov r5, r0", // last handler entry into r5
-                "cmp r0, #0", // check null
-                "beq  2f",
-
-                "bl  handler_from_handler_entry", // save handler into array of handlers
-                "str r0, [r4]",
-                "add r4, r4, #4",
-
-                "add r6, r6, #1", // check that MAX_HANDLERS isn't exceeded
-                "cmp r6, #{1}",
-                "blt 1b",
-                "2:",
-
-                // Null-terminate the array of exception handlers
-                "mov r0, #0",
-                "str r0, [r4]",
-
-                // Return to call_event_handlers
-                "pop {{ r4-r9, lr }}",
-                "bx lr",
+                // move the result into the stacked r0
+                "str r0, [sp, #0]",
+                "bx  lr",
 
                 const api::TRIGGER_EVENT,
-                const poe::call::MAX_HANDLERS,
             )
         }
     };
@@ -163,51 +94,6 @@ unsafe extern "C" fn handler_from_handler_entry(entry: *const HandlerStoreEntry)
     let handler = unsafe { *(*entry).inner.get() }.unwrap().1;
     log::trace!("  found at {entry:p}: {handler:p}",);
     handler
-}
-
-/// The second half of SVCall for TriggerEvent, which calls all of the handlers
-///
-/// Note that the *caller* must push LR onto the stack before calling this function. This is needed
-/// to allow a simple branch to be used (as opposed to branch-and-link), which is effectively what
-/// happens when `SVC` is used. The array of handlers must be null-terminated.
-#[unsafe(naked)]
-#[unsafe(no_mangle)]
-unsafe extern "C" fn call_event_handlers(handlers: *const Handler) -> u32 {
-    arch::naked_asm!(
-        "1:",
-        "ldr r1, [r0]", // check for null
-        "cmp r1, #0",
-        "beq 2f",
-
-        "push {{ r0 }}", // save handlers pointer
-        "mov  r0, r1", // handler in r0
-
-        "push {{ r0 }}",
-        "bl   print_handler",
-        "pop  {{ r0 }}",
-
-        "push {{ r0 }}",
-        "blx  r0",
-        "pop  {{ r0 }}",
-
-        "push {{ r0 }}",
-        "bl   print_handler_done",
-        "pop  {{ r0 }}",
-
-        "pop {{ r0 }}",
-        "add r0, r0, #4",
-        "b   1b",
-
-        "2:",
-        "mrs r0,  msp", // pop the handlers and null terminator
-        "add r0,  r0, #(4*({0} + 1))",
-        "msr msp, r0",
-
-        "pop {{ lr }}", // pop the specially-saved LR
-        "mov r0, #0",
-        "bx  lr",
-        const MAX_HANDLERS,
-    )
 }
 
 #[unsafe(no_mangle)]
@@ -307,23 +193,8 @@ unsafe impl Sync for HandlerStore {}
 
 static STORE: HandlerStore = HandlerStore::new();
 
-#[unsafe(naked)]
 #[unsafe(no_mangle)]
-unsafe extern "C" fn handle(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) {
-    core::arch::naked_asm!(
-        "push {{ lr }}",
-        "bl   {}",
-        "pop  {{ lr }}",
-
-        // move the result into the stacked r0
-        "str r0, [sp, #0]",
-        "bx  lr",
-
-        sym handle_internal,
-    )
-}
-
-fn handle_internal(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
+unsafe extern "C" fn handle_procedure_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
     let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
         log::warn!("ignoring API call ({id:#010x})");
         return 0;
@@ -400,4 +271,136 @@ fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<A
         }
         Procedure::ReturnValue => Some(Args::ReturnValue { value: arg0 }),
     }
+}
+
+/// The first half of TriggerEvent, which manipulates the stack and returns from the exception
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+unsafe extern "C" fn handle_trigger_event(_procedure: u32, event_id: u32) {
+    core::arch::naked_asm!(
+        "mov  r0, r1", // event id in r0
+        "push {{ r0, lr }}",
+        "bl   print_trigger",
+        "pop  {{ r0, lr }}",
+
+        // Manipulate the stack to match (addresses are high to low):
+        //         TODO: is FP required here?
+        //   +4                 LR
+        //   +4                 null
+        //   +(4*MAX_HANDLERS)  handlers
+        //   (+4)               (optional padding)
+        //   +32                exception frame
+        //     +4                 xPSR
+        //     +4                 PC
+        //     +4                 LR
+        //     +4                 R12
+        //     +4                 R3
+        //     +4                 R2
+        //     +4                 R1
+        //     +4                 R0
+
+        "mrs r2, msp",
+        "mov r12, r2", // reserve space for handlers, preserve original exception frame in r2
+        "sub r12, r12, #(4*({0} + 1))", // a word for each handler, plus null
+        "msr msp, r12",
+
+        // r2  - original exception frame / handlers
+        // r12 - current exception frame
+
+        "ldr r1, [r2,  #(4*6)]", // move PC into R0, caller for call_event_handlers
+        "orr r1, r1, #1",
+        "str r1, [r12, #0]",
+
+        "str r2, [r12, #4]", // move handlers into R1
+
+        "push {{ r4-r8, lr }}",
+
+        // TODO: add support for floating point
+        "add   r2,  r2,  #8", // skip R0, R1; set above
+        "add   r12, r12, #8",
+        "ldmia r2,  {{ r3-r8 }}", // copy R2, R3, R12, LR, PC, and xPSR to new frame
+        "stmia r12, {{ r3-r8 }}",
+        "sub   r12, r12, #8",
+        "sub   r2,  r2,  #8",
+
+        "movw r3, #:lower16:call_event_handlers", // put call_event_handlers into PC
+        "movt r3, #:upper16:call_event_handlers",
+        "str  r3, [r12, #24]",
+
+        // Stack up the exception handlers
+        "mov r4, r2", // point r4 to the array of exception handlers
+        "mov r5, #0", // last HandlerStoreEntry found
+        "mov r6, #0", // found count
+        "mov r7, r0", // event id into r7
+
+        "1:",
+        "mov r0, r7", // event id
+        "mov r1, r5", // last handler entry
+        "bl  find_next_handler_entry_by_id",
+        "mov r5, r0", // last handler entry into r5
+        "cmp r0, #0", // check null
+        "beq  2f",
+
+        "bl  handler_from_handler_entry", // save handler into array of handlers
+        "str r0, [r4]",
+        "add r4, r4, #4",
+
+        "add r6, r6, #1", // check that MAX_HANDLERS isn't exceeded
+        "cmp r6, #{0}",
+        "blt 1b",
+        "2:",
+
+        // Null-terminate the array of exception handlers
+        "mov r0, #0",
+        "str r0, [r4]",
+
+        // Return to call_event_handlers
+        "pop {{ r4-r8, lr }}",
+        "bx  lr",
+
+        const MAX_HANDLERS,
+    )
+}
+
+/// The second half of TriggerEvent, which calls all of the handlers
+///
+/// The caller must push the handlers, plus a null terminator, to the stack before calling. These
+/// will be popped before returning to the given caller.
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+unsafe extern "C" fn call_event_handlers(caller: *const (), handlers: *const Handler) -> u32 {
+    arch::naked_asm!(
+        "push {{ r4-r7 }}", // push r7 to maintain alignment
+        "mov  r4, r1", // handlers in r4
+        "mov  r6, r0", // caller in r6
+
+        "1:",
+        "ldr r5, [r4]", // current handler in r5
+        "cmp r5, #0", // check for null
+        "beq 2f",
+
+        "mov r0, r5", // handler in r0
+        "bl  print_handler",
+
+        "blx  r5",
+
+        "mov r0, r5", // handler in r0
+        "bl  print_handler_done",
+
+        "add r4, r4, #4", // move to next handler
+        "b   1b",
+
+        "2:",
+        "mov r1, r6", // caller in r1
+        "pop {{ r4-r7 }}",
+
+        "mrs r0,  msp", // pop the handlers and null terminator
+        "add r0,  r0, #(4*({0} + 1))",
+        "msr msp, r0",
+
+        "mov r0, #0", // success
+        "bx  r1", // return to SVCall caller
+
+        const MAX_HANDLERS,
+    )
 }

@@ -55,9 +55,12 @@ When TriggerEvent is called, the SVCall exception handler does the following:
    handlers. Right now, this list is a hard-coded length.
 2. Find every handler associated with the event, and put them into the list of
    handlers on the stack, making sure to null-terminate it.
-3. Return from SVCall, _but resume execution in a helper thunk_ which pops the
-   list of handlers off the stack and executes them in turn. When this function
-   returns, it jumps back to the caller of the syscall.
+3. Return from SVCall, _but resume execution in a helper thunk_ that executes
+   the handlers. When this function returns, it branches back to the caller of
+   the syscall.
+
+Because this syscall executes handlers, **the stack must be double-word
+aligned** when `svc` is executed, per the AAPCS.
 
 #### Alternatives ###
 
@@ -93,7 +96,7 @@ the remaining space. Old syscalls could be removed, freeing up their numbers for
 reuse. This method requires two memory dereferences for every syscall: the first
 one retrieving the link register from the stack and the second, the argument to
 `SVC`. This method could also benefit from having an external version scheme
-that dictates which syscall numbers are guaranteed to be
-implemented. Alternatively, the application library could check the validity of
-each syscall before using it, possibly making use of a rewriting trampoline
-function to optimize.
+that dictates which syscall numbers are guaranteed to be implemented.
+Alternatively, the application library could check the validity of each syscall
+before using it, possibly making use of a rewriting trampoline function to
+optimize.
