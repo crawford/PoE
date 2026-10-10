@@ -19,6 +19,9 @@ HOST=poe.h.jcraw.net
 
 set -e
 
+# Change to apps directory
+cd "$(dirname "$0")"
+
 function trim-ending() {
     echo -n "${@}" \
         | head --lines -1 \
