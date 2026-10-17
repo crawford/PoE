@@ -14,6 +14,17 @@ connect to it through a pipe. If you see the following error, try power-cycling:
     Remote communication error. Target disconnected:
                                 error while reading: Connection reset by peer.
 
+The file paths in the logs can be shortened by adding the following to
+`cargo/config.toml` in an ancestor directory (with replacements made):
+
+```toml
+[target.thumbv7m-none-eabi]
+rustflags = [
+  "--remap-path-prefix", "/home/${user}/projects/poe/software/=",
+  "--remap-path-prefix", "/home/${user}/.cargo/registry/src/index.crates.io-${hash}/=",
+]
+```
+
 ## Architecture ##
 
 The system is split up into two components: the supervisor and the
