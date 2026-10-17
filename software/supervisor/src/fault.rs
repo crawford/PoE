@@ -40,6 +40,7 @@ pub fn handle_hardfault(frame: &ExceptionFrame, init: impl FnOnce(&ExceptionFram
     print_fault_status_registers();
     print_hint(frame);
     log::error!("******************");
+
     unsafe { end() }
 }
 

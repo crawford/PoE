@@ -76,28 +76,28 @@ impl Resources {
         match iface.get_socket::<Dhcpv4Socket>(self.dhcp_handle).poll() {
             None => {}
             Some(Dhcpv4Event::Configured(config)) => {
-                log::debug!("DHCP config acquired");
+                log::info!("DHCP config acquired");
                 dhcp(State::Operational);
 
                 log::info!("IP address: {}", config.address);
                 iface.update_ip_addrs(|addrs| addrs[0] = IpCidr::Ipv4(config.address));
 
                 if let Some(router) = config.router {
-                    log::debug!("Default gateway: {}", router);
+                    log::info!("Default gateway: {}", router);
                     iface.routes_mut().add_default_ipv4_route(router).unwrap();
                 } else {
-                    log::debug!("Default gateway: None");
+                    log::info!("Default gateway: None");
                     iface.routes_mut().remove_default_ipv4_route();
                 }
 
                 for (i, s) in config.dns_servers.iter().enumerate() {
                     if let Some(s) = s {
-                        log::debug!("DNS server {}:    {}", i, s);
+                        log::info!("DNS server {}:    {}", i, s);
                     }
                 }
             }
             Some(Dhcpv4Event::Deconfigured) => {
-                log::debug!("DHCP config lost");
+                log::info!("DHCP config lost");
                 dhcp(State::NoDhcp);
 
                 iface.update_ip_addrs(|addrs| {
