@@ -130,6 +130,10 @@ impl HandlerStoreEntry {
     fn get(&self) -> Option<(EventIdent, Handler)> {
         unsafe { *self.inner.get() }
     }
+
+    fn clear(&self) {
+        unsafe { *self.inner.get() = None };
+    }
 }
 
 impl fmt::Debug for HandlerStoreEntry {
@@ -144,7 +148,7 @@ impl fmt::Debug for HandlerStoreEntry {
 pub const HANDLERS_COUNT: usize = 32;
 
 #[derive(Debug)]
-struct HandlerStore {
+pub(crate) struct HandlerStore {
     handlers: [HandlerStoreEntry; HANDLERS_COUNT],
 }
 
@@ -187,11 +191,29 @@ impl HandlerStore {
             })
             .next()
     }
+
+    pub(crate) fn clear_all(&self) {
+        self.handlers.iter().for_each(|entry| entry.clear())
+    }
+
+    pub(crate) fn clear(&self, id: EventIdent) {
+        self.handlers
+            .iter()
+            .filter(|entry| match entry.get() {
+                Some((event_id, _handler)) => id == event_id,
+                None => false,
+            })
+            .for_each(|entry| entry.clear())
+    }
 }
 
 unsafe impl Sync for HandlerStore {}
 
 static STORE: HandlerStore = HandlerStore::new();
+
+pub(crate) fn event_handlers() -> &'static HandlerStore {
+    &STORE
+}
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn handle_procedure_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {

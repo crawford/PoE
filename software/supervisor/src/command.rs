@@ -22,6 +22,8 @@ use core::ops::Range;
 use core::{mem, str};
 use ignore_result::Ignore;
 
+use crate::call;
+
 macro_rules! output {
     ($w:expr, $fmt:literal $(, $( $args:expr ),+ )?) => {
         write!($w, $fmt $(, $( $args ),+ )?)
@@ -62,6 +64,8 @@ const HELP_STR: &str = "Command Interpreter
 \r  prog addr                        Display the start address of program space
 \r  prog write <length>              Write input to program space
 \r  prog run                         Call function in program space
+\r  handlers clear [<event id>]      Clears the handlers for the event, or all
+\r  handlers list                    Prints the set of register handlers
 \r  help                             Display this help text
 \r  exit                             Close connection";
 
@@ -88,7 +92,7 @@ static PROGRAM_SPACE: ProgramSpace<512> = ProgramSpace::new();
 pub enum InterpreterMode {
     Command,
     Data,
-    Terminate
+    Terminate,
 }
 
 enum InterpreterState {
@@ -154,7 +158,7 @@ where
     S: AsRef<str>,
     W: Write,
 {
-    let mut tokens = input.as_ref().trim().split(' ');
+    let mut tokens = input.as_ref().trim().split(' ').peekable();
     'parse: {
         macro_rules! token_hex_u32 {
             ($name:literal) => {
@@ -359,6 +363,22 @@ where
                         );
                     }
                     outputln!(output, "Return value (may not be valid): 0x{ret:08X}");
+                }
+                Some(command) => {
+                    outputln!(output, "Unrecognized subcommand: {command} (try 'help')")
+                }
+                None => outputln!(output, "Unspecified subcommand (try 'help')"),
+            },
+            Some("handlers") => match tokens.next() {
+                Some("clear") => match tokens.peek() {
+                    Some(_) => {
+                        let event_id = token_hex_u32!("event_id");
+                        call::event_handlers().clear(event_id)
+                    }
+                    None => call::event_handlers().clear_all(),
+                },
+                Some("list") => {
+                    outputln!(output, "{:#?}", call::event_handlers())
                 }
                 Some(command) => {
                     outputln!(output, "Unrecognized subcommand: {command} (try 'help')")

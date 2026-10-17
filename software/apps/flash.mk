@@ -15,3 +15,6 @@ raw-command: main.bin
 
 run: main.bin
 	$(V) printf "prog write 0x%x\n%s\nprog run\n" $(shell cat $^ | wc --bytes) $(shell hexdump $(HEXDUMP_FLAGS) $^) | nc -N $(HOST) 23
+
+reset:
+	$(V) printf "handlers clear\n" | nc -N $(HOST) 23
