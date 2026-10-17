@@ -1,0 +1,13 @@
+[default.general]
+chip = "EFM32GG11B820F2048GQ64"
+
+[default.probe]
+# Rusty Probe
+usb_pid = "4853"
+usb_vid = "1209"
+
+[default.gdb]
+enabled = true
+
+[default.rtt]
+enabled = true
