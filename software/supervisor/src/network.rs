@@ -13,11 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use core::cmp::min;
+
+use crate::call::{self, WorkTask};
 #[cfg(feature = "telnet")]
 use crate::command::{Interpreter, InterpreterMode};
 use crate::efm32gg::EFM32GG;
 use crate::ksz8091::KSZ8091;
 
+use api::{Bytes, TcpSocketControlCallback, TcpSocketDataCallback, TcpSocketEvent};
+use heapless::Vec;
 #[cfg(feature = "telnet")]
 use ignore_result::Ignore;
 use smoltcp::iface::{Interface, SocketHandle};
@@ -41,6 +46,41 @@ pub struct Resources {
     pub interpreter: Interpreter,
     #[cfg(feature = "telnet")]
     pub prev_mode: InterpreterMode,
+
+    listening_tcp_sockets: Vec<TcpSocketEntry, 8>,
+}
+
+impl Resources {
+    pub fn new(
+        interface: Interface<'static, EFM32GG<'static, KSZ8091>>,
+        tcp_handle: SocketHandle,
+        dhcp_handle: SocketHandle,
+        #[cfg(feature = "telnet")] telnet_handle: SocketHandle,
+    ) -> Self {
+        Self {
+            interface,
+            tcp_handle,
+            dhcp_handle,
+
+            #[cfg(feature = "telnet")]
+            telnet_handle,
+
+            #[cfg(feature = "telnet")]
+            interpreter: Interpreter::new(),
+            #[cfg(feature = "telnet")]
+            prev_mode: InterpreterMode::Command,
+
+            listening_tcp_sockets: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TcpSocketEntry {
+    control_callback: TcpSocketControlCallback,
+    data_callback: TcpSocketDataCallback,
+    handle: SocketHandle,
+    port: u16,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -63,6 +103,66 @@ impl Resources {
 
         #[cfg(feature = "telnet")]
         self.handle_telnet();
+
+        while let Some(task) = call::next_task() {
+            match task {
+                WorkTask::OpenTcpSocket {
+                    rx_buffer,
+                    tx_buffer,
+                    control_callback,
+                    data_callback,
+                    port,
+                } => {
+                    let handle = self
+                        .interface
+                        .add_socket(TcpSocket::new(rx_buffer, tx_buffer));
+                    self.listening_tcp_sockets
+                        .push(TcpSocketEntry {
+                            control_callback,
+                            data_callback,
+                            port,
+                            handle,
+                        })
+                        .expect("too many listening tcp sockets")
+                }
+            }
+        }
+
+        for entry in &self.listening_tcp_sockets {
+            let socket = self.interface.get_socket::<TcpSocket>(entry.handle);
+            if !socket.is_open() {
+                socket.listen(entry.port).unwrap();
+
+                // TODO: should this be under socket.is_active?
+                (entry.control_callback)(TcpSocketEvent::Opened)
+            }
+
+            if socket.may_recv() {
+                let mut buf = [0; 32];
+                let len = socket
+                    .recv(|b| {
+                        let len = min(b.len(), buf.len());
+                        let resp = (entry.data_callback)(Bytes::new(b.as_mut_ptr(), len));
+                        buf[..len].copy_from_slice(&resp.as_slice()[..len]);
+                        (len, len)
+                    })
+                    .unwrap();
+
+                let resp = Bytes::new(buf.as_mut_ptr(), len);
+                log::info!("resp: {resp:?}");
+
+                socket
+                    .send(|b| {
+                        let len = min(b.len(), resp.length());
+                        b[..len].copy_from_slice(&resp.as_slice()[..len]);
+                        (len, ())
+                    })
+                    .unwrap();
+            } else if socket.can_send() {
+                (entry.control_callback)(TcpSocketEvent::Closed);
+                socket.close();
+            }
+        }
     }
 
     pub fn reset_dhcp(&mut self) {
@@ -260,7 +360,7 @@ impl Resources {
                     Some(&EOF) => {
                         socket.close();
                         self.interpreter.reset();
-                    },
+                    }
                     Some(&IP) => abort = true,
                     Some(code) => log::debug!("ignoring telnet command: {code}"),
                     None => log::debug!("ignoring malformed telnet command"),

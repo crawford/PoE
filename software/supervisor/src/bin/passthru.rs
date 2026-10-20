@@ -22,7 +22,7 @@
 /// - identify - Send a "0" or a "1" over TCP to the control port to disable or enable,
 ///              respectively, the flashing "Identify" LED.
 use efm32gg_hal::cmu::CMUExt;
-use efm32gg_hal::gpio::{EFM32Pin, GPIOExt, Output, pins};
+use efm32gg_hal::gpio::{pins, EFM32Pin, GPIOExt, Output};
 use led::mono::{self, CommonAnodeLED};
 use poe::fault;
 
@@ -35,8 +35,7 @@ type NetworkLed = CommonAnodeLED<pins::PE5<Output>>;
     peripherals = true,
 )]
 mod app {
-    use poe::command::{Interpreter, InterpreterMode};
-    use poe::efm32gg::{self, EFM32GG, dma};
+    use poe::efm32gg::{self, dma, EFM32GG};
     use poe::ksz8091::KSZ8091;
     use poe::network;
 
@@ -408,19 +407,14 @@ mod app {
             SharedResources {
                 led_identify,
                 led_network,
-                network: network::Resources {
+                network: network::Resources::new(
                     interface,
                     dhcp_handle,
                     tcp_handle,
 
                     #[cfg(feature = "telnet")]
                     telnet_handle,
-
-                    #[cfg(feature = "telnet")]
-                    interpreter: Interpreter::new(),
-                    #[cfg(feature = "telnet")]
-                    prev_mode: InterpreterMode::Command,
-                },
+                ),
                 rtc,
             },
             LocalResources {

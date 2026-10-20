@@ -32,8 +32,6 @@ type LED1 = rgb::CommonAnodeLED<pins::PH13<Output>, pins::PH14<Output>, pins::PH
     peripherals = true,
 )]
 mod app {
-    #[cfg(feature = "telnet")]
-    use poe::command::{Interpreter, InterpreterMode};
     use poe::efm32gg::{self, dma};
     use poe::ksz8091::KSZ8091;
     use poe::network;
@@ -278,19 +276,13 @@ mod app {
             SharedResources {
                 led0: led_err,
                 led1,
-                network: network::Resources {
+                network: network::Resources::new(
                     interface,
                     tcp_handle,
                     dhcp_handle,
-
                     #[cfg(feature = "telnet")]
                     telnet_handle,
-
-                    #[cfg(feature = "telnet")]
-                    interpreter: Interpreter::new(),
-                    #[cfg(feature = "telnet")]
-                    prev_mode: InterpreterMode::Command,
-                },
+                ),
                 rtc: cx.device.RTC,
             },
             LocalResources {

@@ -9,7 +9,7 @@ pub extern "C" fn _start() {
 }
 
 extern "C" fn handler() {
-    api::print_string("Hello, from Rust!".as_ptr());
+    api::print_string(c"Hello, from Rust!".as_ptr());
 }
 
 #[panic_handler]

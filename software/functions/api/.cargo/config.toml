@@ -3,7 +3,7 @@ target = "thumbv7m-none-eabi"
 
 [target.thumbv7m-none-eabi]
 rustflags = [
-  "--codegen", "link-arg=-Ttext=0x20002e28"
+  "--codegen", "link-arg=-Ttext=0x20004770"
 ]
 
 [alias]

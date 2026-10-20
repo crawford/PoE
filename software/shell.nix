@@ -6,7 +6,7 @@ with ((import-archive "NixOS/nixpkgs" "f3a73bcf5d1") { # nixpkgs 26.05
 });
 
 let
-  rust = (rustChannelOf { channel = "1.88.0"; }).rust.override {
+  rust = (rustChannelOf { channel = "1.95.0"; }).rust.override {
     targets = [ "thumbv7m-none-eabi" ];
     extensions = [ "rust-src" "rust-analyzer-preview" ];
   };

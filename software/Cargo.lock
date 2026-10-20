@@ -198,6 +198,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "func-echo"
+version = "0.1.0"
+dependencies = [
+ "api",
+]
+
+[[package]]
 name = "gcd"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -306,6 +313,7 @@ dependencies = [
  "efm32gg-hal",
  "efm32gg11b820",
  "embedded-hal",
+ "heapless",
  "ignore-result",
  "led",
  "log",

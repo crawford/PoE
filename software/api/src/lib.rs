@@ -15,22 +15,67 @@
 
 #![no_std]
 
-use core::{ffi, mem};
+use core::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
+use core::{ffi, fmt, mem};
 
 #[repr(u32)]
 #[non_exhaustive]
-pub enum SocketEvent {
+pub enum TcpSocketEvent {
     Opened,
     Closed,
 }
 
-pub struct Socket {}
-pub type SocketControlCallback = extern "C" fn(socket: *mut Socket, state: SocketEvent);
-pub type SocketDataCallback = extern "C" fn(socket: *mut Socket, data: *const u8, len: usize);
+/// Fat pointer to an array of bytes.
+///
+/// The lower half is the length, and the upper is a pointer to the data.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Bytes(u64);
+pub type BytesLength = usize;
+pub type BytesData = *mut u8;
+
+impl Bytes {
+    #[inline(always)]
+    pub fn new(data: BytesData, length: BytesLength) -> Self {
+        Self((data as u64) << 32 | length as u64)
+    }
+
+    #[inline(always)]
+    pub fn length(&self) -> BytesLength {
+        (self.0 & 0xFFFF) as BytesLength
+    }
+
+    #[inline(always)]
+    pub fn data(&self) -> BytesData {
+        (self.0 >> 32) as BytesData
+    }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &'static [u8] {
+        unsafe { slice_from_raw_parts(self.data(), self.length()).as_ref_unchecked() }
+    }
+
+    #[inline(always)]
+    pub fn as_mut_slice(&self) -> &'static mut [u8] {
+        unsafe { slice_from_raw_parts_mut(self.data(), self.length()).as_mut_unchecked() }
+    }
+}
+
+impl fmt::Debug for Bytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Bytes")
+            .field(&self.length())
+            .field(&self.data())
+            .finish()
+    }
+}
+
+pub type TcpSocketControlCallback = extern "C" fn(state: TcpSocketEvent);
+pub type TcpSocketDataCallback = extern "C" fn(data: Bytes) -> Bytes;
 
 pub type Handler = extern "C" fn();
 
-pub const OPEN_SOCKET: u32 = Procedure::OpenSocket as u32;
+pub const OPEN_TCP_SOCKET: u32 = Procedure::OpenTcpSocket as u32;
 pub const REGISTER_HANDLER: u32 = Procedure::RegisterHandler as u32;
 pub const TRIGGER_EVENT: u32 = Procedure::TriggerEvent as u32;
 pub const PRINT_STRING: u32 = Procedure::PrintString as u32;
@@ -38,7 +83,7 @@ pub const RETURN_VALUE: u32 = Procedure::ReturnValue as u32;
 
 #[repr(u32)]
 pub enum Procedure {
-    OpenSocket = 0x8BD6C7FF,
+    OpenTcpSocket = 0x8BD6C7FF,
     RegisterHandler = 0xD35DBF5A,
     TriggerEvent = 0x65438A43,
     PrintString = 0x0A066986,
@@ -50,7 +95,7 @@ impl TryFrom<u32> for Procedure {
 
     fn try_from(id: u32) -> Result<Self, Self::Error> {
         match id {
-            OPEN_SOCKET => Ok(Procedure::OpenSocket),
+            OPEN_TCP_SOCKET => Ok(Procedure::OpenTcpSocket),
             REGISTER_HANDLER => Ok(Procedure::RegisterHandler),
             TRIGGER_EVENT => Ok(Procedure::TriggerEvent),
             PRINT_STRING => Ok(Procedure::PrintString),
@@ -61,12 +106,7 @@ impl TryFrom<u32> for Procedure {
 }
 
 pub enum Args {
-    OpenSocket {
-        remote_addr: [u8; 4],
-        remote_port: u16,
-        control_callback: SocketControlCallback,
-        data_callback: SocketDataCallback,
-    },
+    OpenTcpSocket(OpenTcpSocketArgs),
     RegisterHandler {
         event_id: u32,
         handler: Handler,
@@ -80,8 +120,9 @@ pub enum Args {
 }
 
 #[repr(u32)]
-pub enum OpenSocket {
-    TODO = 0,
+pub enum OpenTcpSocket {
+    Queued = 0,
+    NoSpace = 1,
 }
 
 #[repr(u32)]
@@ -101,29 +142,25 @@ pub enum PrintString {
     Failed = 1,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct OpenTcpSocketArgs {
+    pub control_callback: TcpSocketControlCallback,
+    pub data_callback: TcpSocketDataCallback,
+    pub port: u16,
+    pub rx_bytes: Bytes,
+    pub tx_bytes: Bytes,
+}
+
 #[inline(always)]
-pub extern "C" fn open_socket(
-    remote_addr: u32,
-    remote_port: u16,
-    control_callback: SocketControlCallback,
-    data_callback: SocketDataCallback,
-) -> OpenSocket {
+pub extern "C" fn open_tcp_socket(args: &OpenTcpSocketArgs) -> OpenTcpSocket {
     let ret: u32;
     unsafe {
         core::arch::asm!(
-            "push {}",
-
             "svc 0",
 
-            "msr r0, msp",
-            "add r0, r0, #4",
-            "mrs r0, msp",
-
-            in(reg) data_callback,
-            in("r0") OPEN_SOCKET,
-            in("r1") remote_addr,
-            in("r2") remote_port,
-            in("r3") control_callback,
+            in("r0") OPEN_TCP_SOCKET,
+            in("r1") args,
 
             lateout("r0") ret,
 
@@ -139,6 +176,7 @@ pub extern "C" fn register_handler(event_id: u32, handler: Handler) -> RegisterH
     unsafe {
         core::arch::asm!(
             "svc 0",
+
             in("r0") REGISTER_HANDLER,
             in("r1") event_id,
             in("r2") handler,
@@ -157,6 +195,7 @@ pub extern "C" fn trigger_event(event_id: u32) -> TriggerEvent {
     unsafe {
         core::arch::asm!(
             "svc 0",
+
             in("r0") TRIGGER_EVENT,
             in("r1") event_id,
 
@@ -174,6 +213,7 @@ pub extern "C" fn print_string(str: *const u8) -> PrintString {
     unsafe {
         core::arch::asm!(
             "svc 0",
+
             in("r0") PRINT_STRING,
             in("r1") str,
 

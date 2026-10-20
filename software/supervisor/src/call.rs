@@ -28,9 +28,12 @@
 
 use core::cell::UnsafeCell;
 use core::convert::TryFrom;
-use core::{arch, ffi, fmt, mem};
+use core::{arch, ffi, fmt};
 
 use api::*;
+
+use heapless::mpmc::MpMcQueue;
+use smoltcp::socket::TcpSocketBuffer;
 
 /// Maximum number of handlers which can be triggered by a single event
 ///
@@ -74,7 +77,7 @@ extern "C" fn print_trigger(id: EventIdent) {
 
 #[unsafe(no_mangle)]
 extern "C" fn find_handler_by_id(id: EventIdent) -> Option<Handler> {
-    STORE.find(id)
+    HANDLERS.find(id)
 }
 
 #[unsafe(no_mangle)]
@@ -83,7 +86,7 @@ extern "C" fn find_next_handler_entry_by_id(
     last: *const HandlerStoreEntry,
 ) -> *const HandlerStoreEntry {
     log::trace!(" looking for {id:#06x}, after {last:p}");
-    match STORE.find_entry_after(id, last) {
+    match HANDLERS.find_entry_after(id, last) {
         Some(entry) => entry,
         None => core::ptr::null(),
     }
@@ -209,38 +212,62 @@ impl HandlerStore {
 
 unsafe impl Sync for HandlerStore {}
 
-static STORE: HandlerStore = HandlerStore::new();
+static HANDLERS: HandlerStore = HandlerStore::new();
 
 pub(crate) fn event_handlers() -> &'static HandlerStore {
-    &STORE
+    &HANDLERS
+}
+
+pub enum WorkTask {
+    OpenTcpSocket {
+        rx_buffer: TcpSocketBuffer<'static>,
+        tx_buffer: TcpSocketBuffer<'static>,
+        control_callback: TcpSocketControlCallback,
+        data_callback: TcpSocketDataCallback,
+        port: u16,
+    },
+}
+
+const WORK_QUEUE_SIZE: usize = 4;
+static WORK_QUEUE: MpMcQueue<WorkTask, WORK_QUEUE_SIZE> = MpMcQueue::new();
+
+pub fn next_task() -> Option<WorkTask> {
+    WORK_QUEUE.dequeue()
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn handle_procedure_call(
-    id: u32,
-    arg0: u32,
-    arg1: u32,
-    arg2: u32,
-    arg3: u32,
-) -> u32 {
-    let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
+unsafe extern "C" fn handle_procedure_call(id: u32, arg0: u32, arg1: u32, arg2: u32) -> u32 {
+    let Some(args) = capture_args(id, arg0, arg1, arg2) else {
         log::warn!("ignoring API call ({id:#010x})");
         return 0;
     };
 
     match args {
-        Args::OpenSocket {
-            remote_addr,
-            remote_port,
+        Args::OpenTcpSocket(OpenTcpSocketArgs {
             control_callback,
             data_callback,
-        } => {
+            port,
+            rx_bytes,
+            tx_bytes,
+        }) => {
             log::info!(
-                "OpenSocket({remote_addr:?}, {remote_port}, {control_callback:p} {data_callback:p})"
+                "OpenTcpSocket({port} {control_callback:p} {data_callback:p} {rx_bytes:?} {tx_bytes:?})"
             );
-            OpenSocket::TODO as u32
+
+            let rx_buffer = TcpSocketBuffer::new(rx_bytes.as_mut_slice());
+            let tx_buffer = TcpSocketBuffer::new(tx_bytes.as_mut_slice());
+            match WORK_QUEUE.enqueue(WorkTask::OpenTcpSocket {
+                rx_buffer,
+                tx_buffer,
+                control_callback,
+                data_callback,
+                port,
+            }) {
+                Ok(()) => OpenTcpSocket::Queued as u32,
+                _ => OpenTcpSocket::Queued as u32,
+            }
         }
-        Args::RegisterHandler { event_id, handler } => match STORE.next_free() {
+        Args::RegisterHandler { event_id, handler } => match HANDLERS.next_free() {
             Some(entry) => {
                 log::debug!("RegisterHandler({event_id:#06x}, {handler:p}) @ {entry:p}");
                 entry.set(event_id, handler);
@@ -265,21 +292,11 @@ unsafe extern "C" fn handle_procedure_call(
     }
 }
 
-fn capture_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> Option<Args> {
+fn capture_args(id: u32, arg0: u32, arg1: u32, _arg2: u32) -> Option<Args> {
     match Procedure::try_from(id).ok()? {
-        Procedure::OpenSocket => {
-            let remote_addr = arg0.to_ne_bytes();
-            let remote_port = arg1 as u16;
-            let control_callback = unsafe { mem::transmute(arg2 as usize as *const ()) };
-            let data_callback = unsafe { mem::transmute(arg3 as usize as *const ()) };
-
-            Some(Args::OpenSocket {
-                remote_addr,
-                remote_port,
-                control_callback,
-                data_callback,
-            })
-        }
+        Procedure::OpenTcpSocket => Some(Args::OpenTcpSocket(*unsafe {
+            &*(arg0 as *const OpenTcpSocketArgs)
+        })),
         Procedure::RegisterHandler => {
             let id: u32 = arg0;
             let func: u32 = arg1;
