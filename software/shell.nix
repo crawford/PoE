@@ -1,13 +1,9 @@
 let
   import-archive = org-repo: rev: (import (fetchTarball "https://github.com/${org-repo}/archive/${rev}.tar.gz"));
-  nixpkgs-mozilla = "78e723925daf5c9e8d0a1837ec27059e61649cb6";
-
-  nixpkgs-26-05 = (import-archive "NixOS/nixpkgs" "nixos-26.05") { };
-  nixpkgs-22-11 = (import-archive "NixOS/nixpkgs" "nixos-22.11") {
-    overlays = [ (import-archive "mozilla/nixpkgs-mozilla" nixpkgs-mozilla) ];
-  };
 in
-with nixpkgs-22-11;
+with ((import-archive "NixOS/nixpkgs" "f3a73bcf5d1") { # nixpkgs 26.05
+  overlays = [ (import-archive "mozilla/nixpkgs-mozilla" "16ab32eeb83") ];
+});
 
 let
   rust = (rustChannelOf { channel = "1.88.0"; }).rust.override {
@@ -21,7 +17,7 @@ mkShell {
     fio
     inetutils
     openocd
-    nixpkgs-26-05.probe-rs-tools
+    probe-rs-tools
     rust
     sccache
   ];
