@@ -1,5 +1,5 @@
 [workspace]
-members = [ "api", "apps/api", "supervisor" ]
+members = [ "api", "functions/api", "supervisor" ]
 resolver = "3"
 
 [profile.dev]
