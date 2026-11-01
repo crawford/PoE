@@ -216,7 +216,13 @@ pub(crate) fn event_handlers() -> &'static HandlerStore {
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn handle_procedure_call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> u32 {
+unsafe extern "C" fn handle_procedure_call(
+    id: u32,
+    arg0: u32,
+    arg1: u32,
+    arg2: u32,
+    arg3: u32,
+) -> u32 {
     let Some(args) = capture_call(id, arg0, arg1, arg2, arg3) else {
         log::warn!("ignoring API call ({id:#010x})");
         return 0;
@@ -420,9 +426,10 @@ unsafe extern "C" fn call_event_handlers(caller: *const (), handlers: *const Han
         "add r0,  r0, #(4*({0} + 1))",
         "msr msp, r0",
 
-        "mov r0, #0", // success
+        "mov r0, {1}", // success
         "bx  r1", // return to SVCall caller
 
         const MAX_HANDLERS,
+        const TriggerEvent::Triggered as u32,
     )
 }

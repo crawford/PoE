@@ -15,7 +15,7 @@
 
 #![no_std]
 
-use core::ffi;
+use core::{ffi, mem};
 
 #[repr(u32)]
 #[non_exhaustive]
@@ -91,6 +91,11 @@ pub enum RegisterHandler {
 }
 
 #[repr(u32)]
+pub enum TriggerEvent {
+    Triggered = 0,
+}
+
+#[repr(u32)]
 pub enum PrintString {
     Printed = 0,
     Failed = 1,
@@ -102,7 +107,7 @@ pub extern "C" fn open_socket(
     remote_port: u16,
     control_callback: SocketControlCallback,
     data_callback: SocketDataCallback,
-) -> u32 {
+) -> OpenSocket {
     let ret: u32;
     unsafe {
         core::arch::asm!(
@@ -125,11 +130,11 @@ pub extern "C" fn open_socket(
             clobber_abi("C"),
         )
     }
-    ret
+    unsafe { mem::transmute(ret) }
 }
 
 #[inline(always)]
-pub extern "C" fn register_handler(event_id: u32, handler: Handler) -> u32 {
+pub extern "C" fn register_handler(event_id: u32, handler: Handler) -> RegisterHandler {
     let ret: u32;
     unsafe {
         core::arch::asm!(
@@ -143,11 +148,11 @@ pub extern "C" fn register_handler(event_id: u32, handler: Handler) -> u32 {
             clobber_abi("C"),
         )
     }
-    ret
+    unsafe { mem::transmute(ret) }
 }
 
 #[inline(always)]
-pub extern "C" fn trigger_event(event_id: u32) -> u32 {
+pub extern "C" fn trigger_event(event_id: u32) -> TriggerEvent {
     let ret: u32;
     unsafe {
         core::arch::asm!(
@@ -160,11 +165,11 @@ pub extern "C" fn trigger_event(event_id: u32) -> u32 {
             clobber_abi("C"),
         )
     }
-    ret
+    unsafe { mem::transmute(ret) }
 }
 
 #[inline(always)]
-pub extern "C" fn print_string(str: *const u8) -> u32 {
+pub extern "C" fn print_string(str: *const u8) -> PrintString {
     let ret: u32;
     unsafe {
         core::arch::asm!(
@@ -177,5 +182,5 @@ pub extern "C" fn print_string(str: *const u8) -> u32 {
             clobber_abi("C"),
         )
     }
-    ret
+    unsafe { mem::transmute(ret) }
 }

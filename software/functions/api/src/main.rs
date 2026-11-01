@@ -3,9 +3,9 @@
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text._start")]
-pub extern "C" fn _start() -> u32 {
+pub extern "C" fn _start() {
     api::register_handler(0xABCD, handler);
-    api::trigger_event(0xABCD)
+    api::trigger_event(0xABCD);
 }
 
 extern "C" fn handler() {
